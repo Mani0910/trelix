@@ -1,0 +1,10 @@
+flask
+flask-limiter
+paramiko
+openpyxl
+werkzeug
+pysmb
+pywebview
+pyinstaller
+pywinrm
+psycopg2-binary

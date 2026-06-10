@@ -1,0 +1,2656 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trellix Manager</title>
+    <script>
+        (function() {
+            document.documentElement.setAttribute('data-app-ready', '0');
+            try {
+                const saved = localStorage.getItem('trellix-theme');
+                const theme = (saved === 'dark' || saved === 'light') ? saved : 'light';
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (_) {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+
+            // Set initial view before first paint to avoid landing-page flash on direct route reload.
+            const rawPath = window.location.pathname || '/';
+            const normalizedPath = (rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath).toLowerCase();
+            const platformPaths = ['/mxonetrelix', '/mivbtrelix', '/mbgtrelix', '/miv5000trelix', '/windowstrelix'];
+            const initialView = platformPaths.includes(normalizedPath) ? 'platform' : 'landing';
+            document.documentElement.setAttribute('data-initial-view', initialView);
+        })();
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --radius: 16px;
+            --radius-sm: 10px;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #0b0d14;
+            --bg-secondary: #131620;
+            --bg-card: #181b27;
+            --bg-card-header: #1e2235;
+            --bg-input: #0f1118;
+            --bg-hover: #1f2337;
+            --border-primary: rgba(99, 102, 241, 0.15);
+            --border-card: rgba(55, 65, 81, 0.4);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #5a6178;
+            --accent: #818cf8;
+            --accent-hover: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.2);
+            --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-subtle: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            --success: #34d399;
+            --success-bg: rgba(52, 211, 153, 0.08);
+            --error: #f87171;
+            --error-bg: rgba(248, 113, 113, 0.08);
+            --warning: #fbbf24;
+            --warning-bg: rgba(251, 191, 36, 0.08);
+            --info: #60a5fa;
+            --info-bg: rgba(96, 165, 250, 0.08);
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.4);
+            --scrollbar: rgba(99, 102, 241, 0.25);
+            --error-detail-bg: rgba(127, 29, 29, 0.2);
+            --error-detail-border: rgba(248, 113, 113, 0.2);
+            --error-detail-text: #fca5a5;
+            --glass: rgba(24, 27, 39, 0.8);
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f5f7fb;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --bg-card-header: #f8fafd;
+            --bg-input: #f5f7fb;
+            --bg-hover: #f0f2f7;
+            --border-primary: rgba(99, 102, 241, 0.2);
+            --border-card: #e5e7ec;
+            --text-primary: #1a1d2e;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
+            --accent-glow: rgba(79, 70, 229, 0.12);
+            --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --gradient-subtle: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+            --success: #059669;
+            --success-bg: rgba(5, 150, 105, 0.06);
+            --error: #dc2626;
+            --error-bg: rgba(220, 38, 38, 0.05);
+            --warning: #d97706;
+            --warning-bg: rgba(217, 119, 6, 0.06);
+            --info: #2563eb;
+            --info-bg: rgba(37, 99, 235, 0.05);
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+            --shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.08);
+            --scrollbar: rgba(79, 70, 229, 0.2);
+            --error-detail-bg: #fef2f2;
+            --error-detail-border: #fecaca;
+            --error-detail-text: #991b1b;
+            --glass: rgba(255, 255, 255, 0.85);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            transition: background var(--transition), color var(--transition);
+            overflow-x: hidden;
+        }
+
+        /* Background decoration */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            right: -20%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -30%;
+            left: -10%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(118, 75, 162, 0.05) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .app-container {
+            position: relative;
+            z-index: 1;
+            padding: 32px 28px;
+            max-width: 1500px;
+            margin: 0 auto;
+        }
+
+        /* Theme Toggle */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 24px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-card);
+            border-radius: 40px;
+            padding: 7px 14px;
+            box-shadow: var(--shadow);
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+        .theme-toggle:hover { box-shadow: var(--shadow-lg); transform: scale(1.02); }
+        .theme-toggle .icon { font-size: 16px; }
+        .toggle-track {
+            width: 36px; height: 20px;
+            background: var(--text-muted);
+            border-radius: 10px;
+            position: relative;
+            transition: background var(--transition);
+        }
+        .toggle-track::after {
+            content: '';
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 14px; height: 14px;
+            background: white;
+            border-radius: 50%;
+            transition: transform var(--transition);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        [data-theme="light"] .toggle-track { background: var(--accent); }
+        [data-theme="light"] .toggle-track::after { transform: translateX(16px); }
+
+        .auth-bar {
+            position: sticky;
+            top: 0;
+            z-index: 900;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 14px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            background: var(--glass);
+            backdrop-filter: blur(8px);
+        }
+        .auth-fields {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .auth-input {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 12px;
+        }
+        .auth-btn {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .auth-status {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        /* ===== LANDING PAGE ===== */
+        .landing-page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 85vh;
+            animation: fadeUp 0.6s ease-out;
+        }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .landing-logo {
+            width: 72px;
+            height: 72px;
+            background: var(--gradient);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+        }
+        .landing-header {
+            text-align: center;
+            margin-bottom: 52px;
+        }
+        .landing-header h1 {
+            font-size: 40px;
+            font-weight: 900;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -1px;
+            margin-bottom: 12px;
+        }
+        .landing-header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 400;
+        }
+        .platform-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 220px);
+            gap: 20px;
+        }
+        .platform-card {
+            position: relative;
+            background: var(--bg-secondary);
+            border: 1.5px solid var(--border-card);
+            border-radius: 20px;
+            padding: 40px 24px 32px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: var(--shadow);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        .platform-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: var(--gradient);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .platform-card:hover:not(:disabled)::before { opacity: 1; }
+        .platform-card:hover:not(:disabled) {
+            border-color: var(--accent);
+            transform: translateY(-6px);
+            box-shadow: var(--shadow-lg);
+        }
+        .platform-card:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .platform-card:active:not(:disabled) { transform: translateY(-2px); }
+        .platform-icon {
+            width: 56px; height: 56px;
+            background: var(--gradient-subtle);
+            border-radius: 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-bottom: 16px;
+        }
+        .platform-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .platform-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        /* ===== PLATFORM PAGE ===== */
+        .platform-page { animation: fadeUp 0.4s ease-out; }
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-card);
+            color: var(--text-secondary);
+            padding: 9px 18px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 500;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 28px;
+        }
+        .back-btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+            background: var(--accent-glow);
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .page-header h1 {
+            font-size: 26px;
+            font-weight: 800;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+        .page-header p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 6px;
+        }
+
+        /* ===== TOP SECTION (two columns) ===== */
+        .top-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            max-width: 1000px;
+            margin: 0 auto 40px;
+            align-items: start;
+        }
+
+        /* ===== CONTROL PANEL ===== */
+        .control-panel {
+            background: var(--bg-secondary);
+            padding: 28px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-card);
+            box-shadow: var(--shadow);
+            transition: all var(--transition);
+            background-image: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-card-header) 100%);
+        }
+        .control-panel label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .input-stack {
+            display: grid;
+            gap: 10px;
+        }
+        .source-card {
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            background: var(--bg-input);
+            padding: 12px;
+        }
+        .source-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .source-title {
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+        .source-pill {
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border-card);
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+        .source-subtitle {
+            color: var(--text-muted);
+            font-size: 11px;
+            margin-bottom: 10px;
+        }
+        .source-divider {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin: 2px 0;
+        }
+        .mode-toggle {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .mode-btn {
+            border: 1px solid var(--border-card);
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+        .mode-btn.active {
+            border-color: var(--accent);
+            color: var(--text-primary);
+            background: var(--accent-glow);
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+        }
+        .single-form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .single-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .single-field.full {
+            grid-column: 1 / -1;
+        }
+        .single-field label {
+            margin-bottom: 0;
+            font-size: 10px;
+        }
+        .single-input {
+            width: 100%;
+            padding: 11px 12px;
+            border-radius: 10px;
+            border: 1.5px solid var(--border-card);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+        }
+        .password-wrap {
+            position: relative;
+        }
+        .password-wrap .single-input {
+            padding-right: 72px;
+        }
+        .password-toggle {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            height: 28px;
+            min-width: 54px;
+            padding: 0 10px;
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--transition);
+        }
+        .password-toggle:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--accent-glow);
+        }
+        .single-input:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .active-file-banner {
+            margin-top: 10px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border-card);
+            background: var(--accent-glow);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            display: none;
+        }
+        .custom-select {
+            width: 100%;
+            padding: 12px 42px 12px 16px;
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1.5px solid var(--border-card);
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all var(--transition);
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236366f1' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 16px center;
+        }
+        .custom-select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .share-hint {
+            margin-top: 14px;
+            color: var(--text-muted);
+            font-size: 11px;
+            line-height: 1.6;
+            padding: 10px 14px;
+            background: var(--bg-input);
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+        }
+        .precheck-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .mini-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+        }
+        .tiny-btn {
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .tiny-btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        .profile-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .retry-row {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .retry-row input {
+            width: 70px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-input);
+            color: var(--text-primary);
+        }
+        .scorecard-box {
+            margin-top: 10px;
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+        }
+        .scorecard-box table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        .scorecard-box th,
+        .scorecard-box td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border-card);
+            text-align: left;
+            color: var(--text-secondary);
+        }
+        .scorecard-box th {
+            color: var(--text-primary);
+            background: var(--bg-card-header);
+            font-weight: 700;
+        }
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            flex: 1;
+            padding: 12px 16px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            border: 1px solid var(--border-card);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.25s;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            border-color: var(--accent);
+            background: var(--accent-glow);
+        }
+        .btn-secondary:disabled {
+            cursor: not-allowed;
+            opacity: 0.55;
+        }
+        .precheck-note {
+            margin-top: 10px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            display: none;
+        }
+        .file-preview {
+            margin-top: 10px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            display: none;
+        }
+        .file-preview.error {
+            border-color: rgba(248, 113, 113, 0.35);
+            color: var(--error);
+        }
+        .upload-card {
+            border: 1px dashed var(--border-card);
+            border-radius: 12px;
+            background: var(--bg-input);
+            padding: 10px;
+        }
+        .upload-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .upload-file-label {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 9px 12px;
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .upload-filename {
+            flex: 1;
+            min-width: 0;
+            color: var(--text-secondary);
+            font-size: 12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .upload-input-hidden {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+            width: 0;
+            height: 0;
+        }
+        .upload-btn {
+            padding: 10px 12px;
+            border: 1px solid var(--border-card);
+            border-radius: 10px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .upload-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .upload-template {
+            margin-top: 10px;
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .sort-row {
+            margin-top: 14px;
+        }
+        .status-toolbar {
+            max-width: 920px;
+            margin: 0 auto 12px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-secondary);
+            box-shadow: var(--shadow);
+        }
+        .chip-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .chip {
+            border: 1px solid var(--border-card);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            background: var(--bg-input);
+            cursor: pointer;
+        }
+        .chip.active {
+            color: var(--text-primary);
+            border-color: var(--accent);
+            background: var(--accent-glow);
+        }
+        .chip-action {
+            margin-left: auto;
+        }
+        .status-toolbar label {
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .status-toolbar .custom-select {
+            width: 240px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 13px 32px;
+            background: var(--gradient);
+            color: #fff;
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.25s;
+            margin-top: 20px;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.25);
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+        }
+        .btn:active:not(:disabled) { transform: translateY(0); }
+        .btn:disabled {
+            background: var(--text-muted);
+            color: var(--bg-primary);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+            opacity: 0.5;
+        }
+
+        /* ===== STATUS BOARD ===== */
+        .status-board {
+            display: block;
+            max-width: 920px;
+            margin: 0 auto;
+        }
+        .status-group {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            min-height: 0;
+        }
+        .status-group-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border-card);
+            background: var(--bg-card-header);
+        }
+        .status-group-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+        }
+        .status-group-count {
+            min-width: 28px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border-card);
+            background: var(--bg-input);
+            color: var(--text-secondary);
+        }
+        .status-group.group-installed .status-group-title { color: var(--success); }
+        .status-group.group-failed .status-group-title { color: var(--error); }
+        .status-group.group-not-installed .status-group-title { color: var(--warning); }
+        .servers-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            padding: 12px;
+        }
+        .server-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-card);
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow);
+        }
+        .server-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+        .server-card.status-installed { border-color: var(--success); background: var(--success-bg); }
+        .server-card.status-error { border-color: var(--error); background: var(--error-bg); }
+        .server-card.status-warning { border-color: var(--warning); background: var(--warning-bg); }
+        .server-card.status-progress { border-color: var(--info); background: var(--info-bg); }
+
+        .server-header {
+            padding: 11px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            border-bottom: 1px solid var(--border-card);
+            background: var(--bg-card-header);
+        }
+        .server-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .server-ip {
+            font-size: 14px;
+            font-weight: 700;
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+            color: var(--text-primary);
+        }
+        .server-latest {
+            font-size: 11px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 460px;
+        }
+        .server-right {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .details-btn {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid rgba(99, 102, 241, 0.28);
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0;
+            padding: 4px 9px;
+            cursor: pointer;
+        }
+        .details-btn:hover {
+            border-color: var(--accent-hover);
+            color: var(--accent-hover);
+            background: var(--accent-glow);
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .badge-connecting { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border-card); }
+        .badge-progress { background: var(--info-bg); color: var(--info); border: 1px solid rgba(96,165,250,0.25); }
+        .badge-installed { background: var(--success-bg); color: var(--success); border: 1px solid rgba(52,211,153,0.25); }
+        .badge-error { background: var(--error-bg); color: var(--error); border: 1px solid rgba(248,113,113,0.25); }
+        .badge-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(251,191,36,0.25); }
+
+        .server-body {
+            padding: 12px 16px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .server-body.collapsed {
+            display: none;
+        }
+        .server-body::-webkit-scrollbar { width: 4px; }
+        .server-body::-webkit-scrollbar-track { background: transparent; }
+        .server-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+
+        .log-entry {
+            padding: 3px 0;
+            font-size: 11px;
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+            border-bottom: 1px solid rgba(128,128,128,0.06);
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .log-entry:last-child { border-bottom: none; }
+        .log-icon { flex-shrink: 0; font-size: 11px; margin-top: 1px; }
+        .log-icon.info { color: var(--info); }
+        .log-icon.success { color: var(--success); }
+        .log-icon.error { color: var(--error); }
+        .log-icon.warn { color: var(--warning); }
+
+        .error-details {
+            background: var(--error-detail-bg);
+            border: 1px solid var(--error-detail-border);
+            border-radius: 8px;
+            padding: 9px 12px;
+            margin-top: 8px;
+            font-size: 10.5px;
+            color: var(--error-detail-text);
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+            line-height: 1.5;
+        }
+
+        /* ===== SUMMARY ===== */
+        .summary-panel {
+            background: var(--bg-secondary);
+            padding: 32px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border-card);
+            text-align: center;
+            display: none;
+            box-shadow: var(--shadow);
+            animation: fadeUp 0.4s ease-out;
+        }
+        .summary-panel h3 {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+        .summary-panel .subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+        .summary-stats {
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+        }
+        .stat {
+            text-align: center;
+            padding: 16px 24px;
+            background: var(--bg-input);
+            border-radius: 12px;
+            border: 1px solid var(--border-card);
+            min-width: 100px;
+        }
+        .stat-number { font-size: 36px; font-weight: 900; line-height: 1; }
+        .stat-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .stat-number.green { color: var(--success); }
+        .stat-number.red { color: var(--error); }
+        .stat-number.orange { color: var(--warning); }
+        .email-note {
+            margin-top: 20px;
+            font-size: 11px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .run-summary-sticky {
+            position: sticky;
+            bottom: 8px;
+            z-index: 850;
+            margin: 10px auto 0;
+            max-width: 920px;
+            border: 1px solid var(--border-card);
+            border-radius: 12px;
+            background: var(--glass);
+            backdrop-filter: blur(8px);
+            box-shadow: var(--shadow);
+            padding: 10px 12px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .run-summary-sticky .metric {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-weight: 700;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border: 2px solid var(--info);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .top-section { grid-template-columns: 1fr; }
+            .platform-grid { grid-template-columns: 1fr; max-width: 280px; }
+            .status-toolbar { justify-content: stretch; }
+            .status-toolbar .custom-select { width: 100%; }
+            .single-form-grid { grid-template-columns: 1fr; }
+            .servers-grid { grid-template-columns: 1fr; }
+            .summary-stats { flex-direction: column; gap: 12px; }
+            .app-container { padding: 16px 12px; }
+            .landing-header h1 { font-size: 28px; }
+            .server-header { align-items: flex-start; }
+            .server-right { margin-left: 0; }
+            .server-latest { max-width: 210px; }
+        }
+        @media (max-width: 500px) {
+            .theme-toggle { top: 12px; right: 12px; padding: 5px 10px; }
+        }
+
+        html[data-app-ready="0"] .app-container { visibility: hidden; }
+        html[data-app-ready="1"] .app-container { visibility: visible; }
+
+        /* Route-aware initial rendering to prevent visual glitches on refresh. */
+        html[data-initial-view="platform"] #landingPage { display: none !important; }
+        html[data-initial-view="platform"] #platformPage { display: block !important; }
+        html[data-initial-view="landing"] #platformPage { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+        <span class="icon">🌙</span>
+        <div class="toggle-track"></div>
+        <span class="icon">☀️</span>
+    </div>
+
+    <div class="app-container">
+        <div class="auth-bar" id="authBar" style="display:none;">
+            <div class="auth-fields" id="authInputs">
+                <input id="loginUsername" class="auth-input" type="text" placeholder="Username" />
+                <input id="loginPassword" class="auth-input" type="password" placeholder="Password" />
+                <button id="loginBtn" class="auth-btn" type="button">Login</button>
+            </div>
+            <div class="auth-fields" id="authSession" style="display:none;">
+                <span class="auth-status" id="authStatus">Logged in</span>
+                <button id="logoutBtn" class="auth-btn" type="button">Logout</button>
+            </div>
+        </div>
+
+        <!-- LANDING PAGE -->
+        <div id="landingPage" class="landing-page">
+            <div class="landing-logo">🛡️</div>
+            <div class="landing-header">
+                <h1>Trellix Manager</h1>
+                <p>Automated endpoint security deployment across platforms</p>
+            </div>
+            <div class="platform-grid">
+                <button class="platform-card" onclick="selectPlatform('mivb')">
+                    <div class="platform-icon">📡</div>
+                    <div class="platform-name">MiVB</div>
+                    <div class="platform-desc">Deploy Trellix on MiVB servers</div>
+                </button>
+                <button class="platform-card" onclick="selectPlatform('mbg')">
+                    <div class="platform-icon">🛰️</div>
+                    <div class="platform-name">MBG</div>
+                    <div class="platform-desc">Deploy Trellix on MBG servers</div>
+                </button>
+                <button class="platform-card" onclick="selectPlatform('mxone')">
+                    <div class="platform-icon">🖥️</div>
+                    <div class="platform-name">MxOne</div>
+                    <div class="platform-desc">Deploy Trellix on MxOne VMs</div>
+                </button>
+                <button class="platform-card" onclick="selectPlatform('miv5000')">
+                    <div class="platform-icon">📞</div>
+                    <div class="platform-name">MiV5000</div>
+                    <div class="platform-desc">Deploy Trellix on MiV5000</div>
+                </button>
+                <button class="platform-card" onclick="selectPlatform('windows')">
+                    <div class="platform-icon">🪟</div>
+                    <div class="platform-name">Windows</div>
+                    <div class="platform-desc">Deploy Trellix on Windows VMs</div>
+                </button>
+            </div>
+        </div>
+
+        <!-- PLATFORM PAGE -->
+        <div id="platformPage" class="platform-page" style="display:none;">
+            <button class="back-btn" onclick="goBack()">← Back to platforms</button>
+
+            <div class="page-header">
+                <h1 id="platformTitle">MxOne Trellix Manager</h1>
+                <p id="platformSubtitle">Automated Trellix deployment and status checker</p>
+            </div>
+
+            <div class="top-section">
+                <!-- LEFT: Control Panel -->
+                <div class="control-panel" id="uploadSection">
+                    <label>Deployment Input</label>
+                    <div class="mode-toggle">
+                        <button id="modeFileBtn" class="mode-btn active" type="button" onclick="setInputMode('file')">Excel File</button>
+                        <button id="modeSingleBtn" class="mode-btn" type="button" onclick="setInputMode('single')">Single Server</button>
+                    </div>
+
+                    <div id="fileModeBlock">
+                        <div class="input-stack">
+                            <div class="source-card">
+                                <div class="source-title-row">
+                                    <span class="source-title">Select from network path</span>
+                                    <span class="source-pill">Network</span>
+                                </div>
+                                <div class="source-subtitle">Pick an existing file from your configured share.</div>
+                                <select id="existingFileSelect" class="custom-select">
+                                    <option value="">-- Select a file --</option>
+                                </select>
+                            </div>
+
+                            <div class="source-divider">or</div>
+
+                            <div class="source-card upload-card">
+                                <div class="source-title-row">
+                                    <span class="source-title">Upload a new file</span>
+                                    <span class="source-pill">Upload</span>
+                                </div>
+                                <input id="vmFileInput" class="upload-input-hidden" type="file" accept=".xlsx,.xlsm,.xltx,.xltm" />
+                                <div class="upload-head">
+                                    <label class="upload-file-label" for="vmFileInput">Choose XLSX</label>
+                                    <span id="uploadFileName" class="upload-filename">No file selected</span>
+                                    <button id="uploadBtn" class="upload-btn" type="button" onclick="uploadVmFile()">Upload XLSX</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="active-file-banner" id="activeFileBanner"></div>
+                        <div class="upload-template" id="templateHint">Template: Column A = IP, Column B = Username, Column C = Password. Header row is optional.</div>
+                        <div class="file-preview" id="filePreviewInfo"></div>
+                    </div>
+
+                    <div id="singleModeBlock" style="display:none;">
+                        <div class="source-card">
+                            <div class="source-title-row">
+                                <span class="source-title">Single Server Details</span>
+                                <span class="source-pill">Manual</span>
+                            </div>
+                            <div class="source-subtitle">Provide credentials for one VM and deploy directly.</div>
+                            <div class="single-form-grid">
+                                <div class="single-field full">
+                                    <label for="singleIp">IP Address</label>
+                                    <input id="singleIp" class="single-input" type="text" placeholder="10.10.10.10" />
+                                </div>
+                                <div class="single-field">
+                                    <label for="singleUsername">Putty Username</label>
+                                    <input id="singleUsername" class="single-input" type="text" placeholder="root" />
+                                </div>
+                                <div class="single-field">
+                                    <label for="singlePassword">Putty Password</label>
+                                    <div class="password-wrap">
+                                        <input id="singlePassword" class="single-input" type="password" placeholder="Enter password" />
+                                        <button id="singlePasswordToggle" class="password-toggle" type="button" onclick="togglePasswordVisibility('singlePassword', 'singlePasswordToggle')">Show</button>
+                                    </div>
+                                </div>
+                                <div class="single-field full" id="singleRootWrap" style="display:none;">
+                                    <label for="singleRootPassword">su - (root) Password</label>
+                                    <div class="password-wrap">
+                                        <input id="singleRootPassword" class="single-input" type="password" placeholder="Enter root password" />
+                                        <button id="singleRootPasswordToggle" class="password-toggle" type="button" onclick="togglePasswordVisibility('singleRootPassword', 'singleRootPasswordToggle')">Show</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="file-preview" id="singlePreviewInfo"></div>
+                    </div>
+
+                    <div class="precheck-actions">
+                        <button class="btn-secondary" id="precheckBtn" disabled type="button" onclick="runPrecheck()">Run Precheck</button>
+                    </div>
+
+                    <div class="source-card" id="profileSection" style="margin-top:10px; display:none;">
+                        <div class="source-title-row">
+                            <span class="source-title">Deployment Profile Templates</span>
+                            <span class="source-pill">Reusable</span>
+                        </div>
+                        <div class="profile-grid">
+                            <input id="profileName" class="single-input" type="text" placeholder="Profile name" />
+                            <select id="profileSelect" class="custom-select">
+                                <option value="">Load profile</option>
+                            </select>
+                            <input id="profileSharePath" class="single-input" type="text" placeholder="Share path" />
+                            <input id="profileSilentArgs" class="single-input" type="text" placeholder="Silent args" />
+                            <input id="profileInstallerType" class="single-input" type="text" placeholder="Installer type (msi/exe/auto)" />
+                            <input id="profilePorts" class="single-input" type="text" placeholder="Ports (comma separated)" />
+                        </div>
+                        <div class="mini-actions">
+                            <button class="tiny-btn" id="saveProfileBtn" type="button">Save Profile</button>
+                            <button class="tiny-btn" id="deleteProfileBtn" type="button">Delete Profile</button>
+                        </div>
+                    </div>
+
+                    <div class="retry-row">
+                        <label for="retryCountInput" style="margin:0;">Retry Policy</label>
+                        <input id="retryCountInput" type="number" min="0" max="5" value="2" />
+                        <span style="font-size:11px;color:var(--text-muted);">Retries on network timeout only</span>
+                    </div>
+
+                    <div class="precheck-note" id="precheckNote"></div>
+                    <button class="btn" id="startBtn" disabled onclick="startProcess()">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg>
+                        Start Deployment
+                    </button>
+                </div>
+
+                <!-- RIGHT: Summary Panel -->
+                <div class="summary-panel" id="summary">
+                    <h3>Deployment Complete</h3>
+                    <p class="subtitle" id="summarySubtitle">Summary report has been sent to your email</p>
+                    <div class="summary-stats">
+                        <div class="stat">
+                            <div class="stat-number green" id="successCount">0</div>
+                            <div class="stat-label">Installed</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-number orange" id="warningCount">0</div>
+                            <div class="stat-label">Needs Attention</div>
+                        </div>
+                    </div>
+                    <div class="email-note" id="emailNote">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 7L2 7"/></svg>
+                        <span id="emailNoteText">Summary emailed to mekala.manikanta@mitel.com</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="status-toolbar" id="statusToolbar" style="display:none;">
+                <div class="chip-row">
+                    <button class="chip active" data-chip="all" type="button">All</button>
+                    <button class="chip" data-chip="ready" type="button">Ready</button>
+                    <button class="chip" data-chip="failed" type="button">Failed</button>
+                    <button class="chip" data-chip="installed" type="button">Installed</button>
+                    <button class="chip chip-action" id="rerunFailedBtn" type="button">Re-run Failed</button>
+                </div>
+            </div>
+
+            <div class="status-board" id="statusBoard" style="display:none;">
+                <div class="status-group group-installed" id="installedGroup" style="display:none;">
+                    <div class="status-group-header">
+                        <span class="status-group-title">Installed</span>
+                        <span class="status-group-count" id="installedCount">0</span>
+                    </div>
+                    <div class="servers-grid" id="installedGrid"></div>
+                </div>
+                <div class="status-group group-not-installed" id="notInstalledGroup">
+                    <div class="status-group-header">
+                        <span class="status-group-title" id="serverGroupTitle">Servers</span>
+                        <span class="status-group-count" id="notInstalledCount">0</span>
+                    </div>
+                    <div class="servers-grid" id="notInstalledGrid"></div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('trellix-theme', next);
+        }
+
+        const PLATFORM_META = {
+            mxone: {
+                title: 'MxOne Trellix Manager',
+                subtitle: 'Automated Trellix deployment and status checker for MxOne VMs',
+                template: 'Template: Column A = IP, Column B = Putty Username, Column C = Putty Password, Column D = Root Password. Header row is optional.',
+            },
+            mivb: {
+                title: 'MiVB Trellix Manager',
+                subtitle: 'Automated Trellix deployment and status checker for MiVB servers',
+                template: 'Template: Column A = IP, Column B = Username, Column C = Password. Header row is optional.',
+            },
+            mbg: {
+                title: 'MBG Trellix Manager',
+                subtitle: 'Automated Trellix deployment and status checker for MBG servers',
+                template: 'Template: Column A = IP, Column B = Username, Column C = Password. Header row is optional.',
+            },
+            miv5000: {
+                title: 'MiV5000 Trellix Manager',
+                subtitle: 'Automated Trellix deployment and status checker for MiV5000 systems',
+                template: 'Template: Column A = IP, Column B = Username, Column C = Password. Header row is optional.',
+            },
+            windows: {
+                title: 'Windows Trellix Manager',
+                subtitle: 'Automated Trellix deployment and status checker for Windows VMs',
+                template: 'Template: Column A = IP, Column B = Username, Column C = Password. Header row is optional.',
+            },
+        };
+
+        let currentPlatform = 'mxone';
+        const startBtn = document.getElementById('startBtn');
+        const installedGrid = document.getElementById('installedGrid');
+        const notInstalledGrid = document.getElementById('notInstalledGrid');
+        const serverGroupTitle = document.getElementById('serverGroupTitle');
+        const statusToolbar = document.getElementById('statusToolbar');
+        const statusBoard = document.getElementById('statusBoard');
+        const installedGroup = document.getElementById('installedGroup');
+        const notInstalledGroup = document.getElementById('notInstalledGroup');
+        const existingSelect = document.getElementById('existingFileSelect');
+        const vmFileInput = document.getElementById('vmFileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadFileName = document.getElementById('uploadFileName');
+        const filePreviewInfo = document.getElementById('filePreviewInfo');
+        const precheckBtn = document.getElementById('precheckBtn');
+        const precheckNote = document.getElementById('precheckNote');
+        const activeFileBanner = document.getElementById('activeFileBanner');
+        const templateHint = document.getElementById('templateHint');
+        const modeFileBtn = document.getElementById('modeFileBtn');
+        const modeSingleBtn = document.getElementById('modeSingleBtn');
+        const fileModeBlock = document.getElementById('fileModeBlock');
+        const singleModeBlock = document.getElementById('singleModeBlock');
+        const singlePreviewInfo = document.getElementById('singlePreviewInfo');
+        const singleIp = document.getElementById('singleIp');
+        const singleUsername = document.getElementById('singleUsername');
+        const singlePassword = document.getElementById('singlePassword');
+        const singleRootPassword = document.getElementById('singleRootPassword');
+        const singlePasswordToggle = document.getElementById('singlePasswordToggle');
+        const singleRootPasswordToggle = document.getElementById('singleRootPasswordToggle');
+        const singleRootWrap = document.getElementById('singleRootWrap');
+        const viewSelect = document.getElementById('viewSelect');
+        const sortControls = Array.from(document.querySelectorAll('.sort-select'));
+        const filterChips = Array.from(document.querySelectorAll('.chip[data-chip]'));
+        const rerunFailedBtn = document.getElementById('rerunFailedBtn');
+        const runSummarySticky = document.getElementById('runSummarySticky');
+        const metricReady = document.getElementById('metricReady');
+        const metricFailed = document.getElementById('metricFailed');
+        const metricInstalled = document.getElementById('metricInstalled');
+        const metricEta = document.getElementById('metricEta');
+        const exportCsvBtn = document.getElementById('exportCsvBtn');
+        const exportXlsxBtn = document.getElementById('exportXlsxBtn');
+        const precheckScorecardBox = document.getElementById('precheckScorecardBox');
+        const precheckScorecardBody = document.getElementById('precheckScorecardBody');
+        const retryCountInput = document.getElementById('retryCountInput');
+        const validateSourceBtn = document.getElementById('validateSourceBtn');
+        const saveProfileBtn = document.getElementById('saveProfileBtn');
+        const deleteProfileBtn = document.getElementById('deleteProfileBtn');
+        const profileSelect = document.getElementById('profileSelect');
+        const profileName = document.getElementById('profileName');
+        const profileSharePath = document.getElementById('profileSharePath');
+        const profileSilentArgs = document.getElementById('profileSilentArgs');
+        const profileInstallerType = document.getElementById('profileInstallerType');
+        const profilePorts = document.getElementById('profilePorts');
+        const loginUsername = document.getElementById('loginUsername');
+        const loginPassword = document.getElementById('loginPassword');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const authInputs = document.getElementById('authInputs');
+        const authSession = document.getElementById('authSession');
+        const authStatus = document.getElementById('authStatus');
+        const API_BASE = '';
+        let previewRequestToken = 0;
+        let precheckTargets = null;
+        let precheckInstalled = [];
+        let precheckInstalledDetails = [];
+        let uploadedFileValue = '';
+        let uploadedFileLabel = '';
+        let previewServerIps = [];
+        let inputMode = 'file';
+        let authToken = localStorage.getItem('trelix-token') || '';
+        let authRole = localStorage.getItem('trelix-role') || '';
+        let authUser = localStorage.getItem('trelix-user') || '';
+        let activeSessionId = '';
+        let runStartMs = 0;
+
+        function getActiveFileValue() {
+            return uploadedFileValue || existingSelect.value;
+        }
+
+        function isSingleMode() {
+            return inputMode === 'single';
+        }
+
+        function getSinglePayload() {
+            return {
+                ip: (singleIp?.value || '').trim(),
+                admin_username: (singleUsername?.value || '').trim(),
+                admin_password: (singlePassword?.value || '').trim(),
+                root_password: (singleRootPassword?.value || '').trim(),
+            };
+        }
+
+        function isSingleFormValid() {
+            const payload = getSinglePayload();
+            if (!payload.ip || !payload.admin_username || !payload.admin_password) return false;
+            if (currentPlatform === 'mxone' && !payload.root_password) return false;
+            return true;
+        }
+
+        function hideSinglePreview() {
+            if (!singlePreviewInfo) return;
+            singlePreviewInfo.style.display = 'none';
+            singlePreviewInfo.classList.remove('error');
+            singlePreviewInfo.textContent = '';
+        }
+
+        function showSinglePreview(message, isError = false) {
+            if (!singlePreviewInfo) return;
+            singlePreviewInfo.style.display = 'block';
+            singlePreviewInfo.classList.toggle('error', isError);
+            singlePreviewInfo.textContent = message;
+        }
+
+        function resetPasswordVisibility() {
+            if (singlePassword) singlePassword.type = 'password';
+            if (singleRootPassword) singleRootPassword.type = 'password';
+            if (singlePasswordToggle) singlePasswordToggle.textContent = 'Show';
+            if (singleRootPasswordToggle) singleRootPasswordToggle.textContent = 'Show';
+        }
+
+        function togglePasswordVisibility(inputId, toggleId) {
+            const input = document.getElementById(inputId);
+            const toggle = document.getElementById(toggleId);
+            if (!input || !toggle) return;
+            const showing = input.type === 'text';
+            input.type = showing ? 'password' : 'text';
+            toggle.textContent = showing ? 'Show' : 'Hide';
+        }
+
+        function updateSingleFieldsForPlatform() {
+            const needRoot = currentPlatform === 'mxone';
+            if (singleRootWrap) singleRootWrap.style.display = needRoot ? '' : 'none';
+            if (!needRoot && singleRootPassword) singleRootPassword.value = '';
+            if (!needRoot && singleRootPassword) singleRootPassword.type = 'password';
+            if (!needRoot && singleRootPasswordToggle) singleRootPasswordToggle.textContent = 'Show';
+        }
+
+        function updatePrecheckButtonState() {
+            if (!precheckBtn) return;
+            if (isSingleMode()) {
+                precheckBtn.disabled = !isSingleFormValid();
+            } else {
+                precheckBtn.disabled = !getActiveFileValue();
+            }
+        }
+
+        function setInputMode(mode) {
+            inputMode = mode === 'single' ? 'single' : 'file';
+            if (modeFileBtn) modeFileBtn.classList.toggle('active', inputMode === 'file');
+            if (modeSingleBtn) modeSingleBtn.classList.toggle('active', inputMode === 'single');
+            if (fileModeBlock) fileModeBlock.style.display = inputMode === 'file' ? '' : 'none';
+            if (singleModeBlock) singleModeBlock.style.display = inputMode === 'single' ? '' : 'none';
+
+            hideFilePreview();
+            hideSinglePreview();
+            resetPrecheckState();
+
+            if (inputMode === 'file' && getActiveFileValue()) {
+                previewSelectedFile();
+                return;
+            }
+
+            if (inputMode === 'single') {
+                showSinglePreview('Fill server details and click Run Precheck.');
+            }
+            updatePrecheckButtonState();
+        }
+
+        function updateActiveFileBanner() {
+            if (!activeFileBanner) return;
+
+            if (uploadedFileValue && uploadedFileLabel) {
+                activeFileBanner.style.display = 'block';
+                activeFileBanner.textContent = `Active file: ${uploadedFileLabel} (uploaded)`;
+                return;
+            }
+
+            if (existingSelect.value) {
+                const option = existingSelect.options[existingSelect.selectedIndex];
+                const selectedLabel = option ? option.textContent : existingSelect.value;
+                activeFileBanner.style.display = 'block';
+                activeFileBanner.textContent = `Active file: ${selectedLabel} (network)`;
+                return;
+            }
+
+            activeFileBanner.style.display = 'none';
+            activeFileBanner.textContent = '';
+        }
+
+        function getSelectedSortValue() {
+            const activeChip = document.querySelector('.chip.active[data-chip]');
+            return activeChip ? activeChip.getAttribute('data-chip') : 'all';
+        }
+
+        function syncSortControls(value) {
+            sortControls.forEach(ctrl => {
+                if (ctrl.value !== value) ctrl.value = value;
+            });
+            filterChips.forEach(chip => {
+                chip.classList.toggle('active', chip.getAttribute('data-chip') === value);
+            });
+        }
+
+        function authHeaders(extra = {}) {
+            const h = { ...extra };
+            if (authToken) h['Authorization'] = `Bearer ${authToken}`;
+            return h;
+        }
+
+        function updateAuthUi() {
+            const logged = !!authToken;
+            if (authInputs) authInputs.style.display = logged ? 'none' : '';
+            if (authSession) authSession.style.display = logged ? '' : 'none';
+            if (authStatus) {
+                authStatus.textContent = logged ? `Logged in: ${authUser} (${authRole})` : 'Not logged in';
+            }
+            const canAdmin = authRole === 'admin';
+            if (saveProfileBtn) saveProfileBtn.disabled = !canAdmin;
+            if (deleteProfileBtn) deleteProfileBtn.disabled = !canAdmin;
+        }
+
+        function login() {
+            fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: (loginUsername?.value || '').trim(),
+                    password: (loginPassword?.value || ''),
+                }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error || !data.token) throw new Error(data.error || 'Login failed');
+                authToken = data.token;
+                authRole = data.role || 'operator';
+                authUser = data.username || 'user';
+                localStorage.setItem('trelix-token', authToken);
+                localStorage.setItem('trelix-role', authRole);
+                localStorage.setItem('trelix-user', authUser);
+                updateAuthUi();
+                loadProfiles();
+                loadFiles(currentPlatform);
+            })
+            .catch(err => alert(err.message || 'Login failed'));
+        }
+
+        function logout() {
+            authToken = '';
+            authRole = '';
+            authUser = '';
+            localStorage.removeItem('trelix-token');
+            localStorage.removeItem('trelix-role');
+            localStorage.removeItem('trelix-user');
+            updateAuthUi();
+        }
+
+        function loadProfiles() {
+            // Reusable profiles are disabled by requirement.
+            if (profileSelect) {
+                profileSelect.innerHTML = '<option value="">Reusable profiles disabled</option>';
+            }
+        }
+
+        function applySelectedProfile() {
+            const option = profileSelect?.options?.[profileSelect.selectedIndex];
+            if (!option || !option.dataset.payload) return;
+            let tpl = {};
+            try { tpl = JSON.parse(option.dataset.payload); } catch (_) { tpl = {}; }
+            if (profileSharePath) profileSharePath.value = tpl.share_path || '';
+            if (profileSilentArgs) profileSilentArgs.value = tpl.silent_args || '';
+            if (profileInstallerType) profileInstallerType.value = tpl.installer_type || 'auto';
+            if (profilePorts) profilePorts.value = Array.isArray(tpl.ports) ? tpl.ports.join(',') : '';
+            if (profileName) profileName.value = option.value || '';
+        }
+
+        function saveProfile() {
+            return;
+            const name = (profileName?.value || '').trim();
+            if (!name) return alert('Enter profile name');
+            const ports = (profilePorts?.value || '').split(',').map(x => x.trim()).filter(Boolean);
+            fetch(`${API_BASE}/profiles/${currentPlatform}`, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    name,
+                    template: {
+                        share_path: (profileSharePath?.value || '').trim(),
+                        installer_type: (profileInstallerType?.value || 'auto').trim(),
+                        silent_args: (profileSilentArgs?.value || '').trim(),
+                        ports,
+                    },
+                }),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) throw new Error(data.error);
+                loadProfiles();
+            })
+            .catch(err => alert(err.message || 'Save profile failed'));
+        }
+
+        function deleteProfile() {
+            return;
+            const name = (profileName?.value || profileSelect?.value || '').trim();
+            if (!name) return alert('Select or enter profile name');
+            fetch(`${API_BASE}/profiles/${currentPlatform}/${encodeURIComponent(name)}`, {
+                method: 'DELETE',
+                headers: authHeaders(),
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) throw new Error(data.error);
+                loadProfiles();
+            })
+            .catch(err => alert(err.message || 'Delete profile failed'));
+        }
+
+        function validatePackageSource() {
+            const required = currentPlatform === 'windows' ? [] : ['fireeye.sh'];
+            fetch(`${API_BASE}/validate-package-source/${currentPlatform}`, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    source_path: (profileSharePath?.value || '').trim() || null,
+                    required_files: required,
+                }),
+            })
+            .then(async r => ({ status: r.status, data: await r.json() }))
+            .then(({ data }) => {
+                const lines = (data.checks || []).map(c => `${c.ok ? 'OK' : 'FAIL'} - ${c.name}: ${c.message}`);
+                showFilePreview(lines.join(' | '), !data.ok);
+            })
+            .catch(() => showFilePreview('Validation failed.', true));
+        }
+
+        function renderScorecard(precheckDetails) {
+            if (!precheckScorecardBox || !precheckScorecardBody) return;
+            precheckScorecardBody.innerHTML = '';
+            (precheckDetails || []).forEach(item => {
+                const s = item.scorecard || {};
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${item.ip || ''}</td>
+                    <td>${s.reachable || '-'}</td>
+                    <td>${s.credential_valid || '-'}</td>
+                    <td>${s.platform_match || '-'}</td>
+                    <td>${s.trellix_installed || '-'}</td>
+                    <td>${s.ready || '-'}</td>
+                `;
+                precheckScorecardBody.appendChild(tr);
+            });
+            precheckScorecardBox.style.display = (precheckDetails && precheckDetails.length) ? 'block' : 'none';
+        }
+
+        function updateStickySummary() {
+            const cards = Array.from(notInstalledGrid.children);
+            const installed = cards.filter(c => c.classList.contains('status-installed')).length;
+            const failed = cards.filter(c => c.classList.contains('status-error') || c.classList.contains('status-warning') || c.classList.contains('status-failed')).length;
+            const ready = cards.filter(c => c.classList.contains('status-progress') && !c.classList.contains('status-installed')).length;
+            if (metricReady) metricReady.textContent = `Ready: ${ready}`;
+            if (metricFailed) metricFailed.textContent = `Failed: ${failed}`;
+            if (metricInstalled) metricInstalled.textContent = `Installed: ${installed}`;
+            if (runSummarySticky) runSummarySticky.style.display = cards.length ? 'flex' : 'none';
+            if (runStartMs > 0 && metricEta) {
+                const elapsedSec = Math.floor((Date.now() - runStartMs) / 1000);
+                const processed = installed + failed;
+                const total = Math.max(cards.length, 1);
+                if (processed > 0 && processed < total) {
+                    const rate = elapsedSec / processed;
+                    const eta = Math.max(0, Math.round((total - processed) * rate));
+                    metricEta.textContent = `ETA: ${eta}s`;
+                } else if (processed >= total) {
+                    metricEta.textContent = 'ETA: done';
+                } else {
+                    metricEta.textContent = 'ETA: --';
+                }
+            }
+        }
+
+        function exportRun(fmt) {
+            if (!activeSessionId) return alert('No active run session');
+            const url = `${API_BASE}/runs/${activeSessionId}/export/${fmt}?token=${encodeURIComponent(authToken)}`;
+            window.open(url, '_blank');
+        }
+
+        function rerunFailed() {
+            const failedIps = Array.from(notInstalledGrid.children)
+                .filter(c => c.classList.contains('status-error') || c.classList.contains('status-warning') || c.classList.contains('status-failed'))
+                .map(c => (c.id || '').replace('card-', '').replace(/-/g, '.'));
+            if (!failedIps.length) return;
+            precheckTargets = failedIps;
+            startProcess();
+        }
+
+        function sortAllGroups() {
+            const mode = getSelectedSortValue();
+
+            // Keep one unified list; View controls which cards are visible.
+            installedGroup.style.display = 'none';
+            notInstalledGroup.style.display = '';
+
+            const cards = Array.from(notInstalledGrid.children);
+            let visibleCount = 0;
+            cards.forEach(card => {
+                const isInstalled = card.classList.contains('status-installed');
+                const isReady = card.classList.contains('status-progress') && !isInstalled;
+                const isFailed = card.classList.contains('status-failed') || card.classList.contains('status-error') || card.classList.contains('status-warning');
+                const shouldShow = mode === 'all'
+                    || (mode === 'installed' && isInstalled)
+                    || (mode === 'ready' && isReady)
+                    || (mode === 'failed' && isFailed);
+                card.style.display = shouldShow ? '' : 'none';
+                if (shouldShow) visibleCount += 1;
+            });
+
+            if (mode === 'installed') {
+                serverGroupTitle.textContent = 'Installed';
+            } else if (mode === 'ready') {
+                serverGroupTitle.textContent = 'Ready To Deploy';
+            } else if (mode === 'failed') {
+                serverGroupTitle.textContent = 'Precheck Failed';
+            } else {
+                serverGroupTitle.textContent = 'Servers';
+            }
+
+            document.getElementById('notInstalledCount').textContent = visibleCount;
+        }
+
+        function setStatusBoardVisible(visible) {
+            statusToolbar.style.display = visible ? 'flex' : 'none';
+            statusBoard.style.display = visible ? 'block' : 'none';
+        }
+
+        function hideFilePreview() {
+            filePreviewInfo.style.display = 'none';
+            filePreviewInfo.classList.remove('error');
+            filePreviewInfo.textContent = '';
+        }
+
+        function hidePrecheckNote() {
+            precheckNote.style.display = 'none';
+            precheckNote.textContent = '';
+        }
+
+        function showPrecheckNote(message) {
+            precheckNote.style.display = 'block';
+            precheckNote.textContent = message;
+        }
+
+        function resetPrecheckState() {
+            precheckTargets = null;
+            precheckInstalled = [];
+            precheckInstalledDetails = [];
+            hidePrecheckNote();
+            updatePrecheckButtonState();
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg> Start Deployment';
+        }
+
+        function showFilePreview(message, isError = false) {
+            filePreviewInfo.style.display = 'block';
+            filePreviewInfo.classList.toggle('error', isError);
+            filePreviewInfo.textContent = message;
+        }
+
+        function getPlatformShortName(platform) {
+            if (platform === 'mivb') return 'MiVB';
+            if (platform === 'mbg') return 'MBG';
+            if (platform === 'mxone') return 'MxOne';
+            if (platform === 'miv5000') return 'MiV5000';
+            if (platform === 'windows') return 'Windows';
+            return platform.toUpperCase();
+        }
+
+        function previewSelectedFile(valueOverride) {
+            const value = valueOverride || getActiveFileValue();
+            if (!value) {
+                previewServerIps = [];
+                resetPrecheckState();
+                hideFilePreview();
+                return;
+            }
+
+            const currentToken = ++previewRequestToken;
+            resetPrecheckState();
+            showFilePreview('Checking server count...');
+
+            fetch(`${API_BASE}/preview-existing/${currentPlatform}`, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ filename: value })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (currentToken !== previewRequestToken) return;
+                if (data.error) {
+                    previewServerIps = [];
+                    showFilePreview(data.error, true);
+                    startBtn.disabled = true;
+                    return;
+                }
+                previewServerIps = (data.servers || []).slice();
+                const platformName = getPlatformShortName(currentPlatform);
+                showFilePreview(`${data.count} ${platformName} server(s) found in active file.`);
+                if (precheckBtn) precheckBtn.disabled = false;
+            })
+            .catch(() => {
+                if (currentToken !== previewRequestToken) return;
+                previewServerIps = [];
+                showFilePreview('Could not read selected file.', true);
+                resetPrecheckState();
+            });
+        }
+
+        function clearServerGroups() {
+            installedGrid.innerHTML = '';
+            notInstalledGrid.innerHTML = '';
+            updateGroupCounts();
+            sortAllGroups();
+        }
+
+        function updateGroupCounts() {
+            const cards = Array.from(notInstalledGrid.children);
+            const installedCount = cards.filter(card => card.classList.contains('status-installed')).length;
+            document.getElementById('installedCount').textContent = installedCount;
+        }
+
+        function moveCardToGroup(ip, group) {
+            const card = document.getElementById(`card-${ip.replace(/\./g, '-')}`);
+            if (!card) return;
+
+            // Keep cards in one list. View filter will control visibility.
+            if (card.parentElement !== notInstalledGrid) {
+                notInstalledGrid.appendChild(card);
+            }
+            sortAllGroups();
+            updateGroupCounts();
+        }
+
+        const PLATFORM_TO_ROUTE = {
+            mxone: '/mxonetrelix',
+            mivb: '/mivbtrelix',
+            mbg: '/mbgtrelix',
+            miv5000: '/miv5000trelix',
+            windows: '/windowstrelix',
+        };
+
+        function normalizePath(pathname) {
+            if (!pathname) return '/';
+            const noQuery = String(pathname).split('?')[0].split('#')[0] || '/';
+            if (noQuery.length === 1) return noQuery.toLowerCase();
+            return noQuery.replace(/\/+$/, '').toLowerCase();
+        }
+
+        function getPlatformFromPath(pathname = window.location.pathname) {
+            const path = normalizePath(pathname);
+            if (path === '/mivbtrelix') return 'mivb';
+            if (path === '/mbgtrelix') return 'mbg';
+            if (path === '/mxonetrelix') return 'mxone';
+            if (path === '/miv5000trelix') return 'miv5000';
+            if (path === '/windowstrelix') return 'windows';
+            return null;
+        }
+
+        function updateRouteForPlatform(platform, replace = false) {
+            const targetUrl = PLATFORM_TO_ROUTE[platform] || '/trelix';
+            const currentPath = normalizePath(window.location.pathname);
+            if (currentPath === targetUrl) return;
+            const method = replace ? 'replaceState' : 'pushState';
+            window.history[method]({ platform }, '', targetUrl);
+        }
+
+        function showLanding(syncUrl = true, replaceUrl = false) {
+            document.documentElement.setAttribute('data-initial-view', 'landing');
+            document.getElementById('landingPage').style.display = 'flex';
+            document.getElementById('platformPage').style.display = 'none';
+            if (syncUrl) {
+                const currentPath = normalizePath(window.location.pathname);
+                if (currentPath !== '/trelix' && currentPath !== '/') {
+                    const method = replaceUrl ? 'replaceState' : 'pushState';
+                    window.history[method]({}, '', '/trelix');
+                }
+            }
+        }
+
+        function selectPlatform(platform, syncUrl = true, replaceUrl = false) {
+            const selected = PLATFORM_META[platform] ? platform : 'mxone';
+            document.documentElement.setAttribute('data-initial-view', 'platform');
+            currentPlatform = selected;
+            if (syncUrl) {
+                updateRouteForPlatform(selected, replaceUrl);
+            }
+            const meta = PLATFORM_META[selected];
+            document.getElementById('landingPage').style.display = 'none';
+            document.getElementById('platformPage').style.display = 'block';
+            document.getElementById('platformTitle').textContent = meta.title;
+            document.getElementById('platformSubtitle').textContent = meta.subtitle;
+            if (templateHint) {
+                templateHint.textContent = meta.template || 'Template: Column A = IP, Column B = Username, Column C = Password. Header row is optional.';
+            }
+            updateSingleFieldsForPlatform();
+            existingSelect.innerHTML = '<option value="">-- Select a file --</option>';
+            uploadedFileValue = '';
+            uploadedFileLabel = '';
+            previewServerIps = [];
+            if (vmFileInput) vmFileInput.value = '';
+            if (uploadFileName) uploadFileName.textContent = 'No file selected';
+            if (singleIp) singleIp.value = '';
+            if (singleUsername) singleUsername.value = '';
+            if (singlePassword) singlePassword.value = '';
+            if (singleRootPassword) singleRootPassword.value = '';
+            resetPasswordVisibility();
+            updateActiveFileBanner();
+            hideFilePreview();
+            hideSinglePreview();
+            resetPrecheckState();
+            setInputMode('file');
+            syncSortControls('all');
+            sortAllGroups();
+            clearServerGroups();
+            setStatusBoardVisible(false);
+            document.getElementById('summary').style.display = 'none';
+            loadFiles(selected);
+            loadProfiles();
+        }
+
+        function markAppReady() {
+            document.documentElement.setAttribute('data-app-ready', '1');
+        }
+
+        function goBack() {
+            showLanding(true, false);
+        }
+
+        function loadFiles(platform) {
+            fetch(`${API_BASE}/list-files/${platform}?include_local=0`, { headers: authHeaders() })
+            .then(r => r.json())
+            .then(payload => {
+                if (payload.error) {
+                    previewServerIps = [];
+                    existingSelect.innerHTML = `<option value="">-- ${payload.error} --</option>`;
+                    return;
+                }
+
+                // Backward-compatible parsing in case API still returns an array.
+                const files = Array.isArray(payload) ? payload : (payload.files || []);
+                const networkError = Array.isArray(payload) ? null : payload.network_error;
+
+                if (files.length === 0) {
+                    existingSelect.innerHTML = '<option value="">-- No .xlsx files found --</option>';
+                } else {
+                    files.forEach(f => {
+                        const opt = document.createElement('option');
+                        opt.value = f.value;
+                        opt.textContent = f.label;
+                        existingSelect.appendChild(opt);
+                    });
+                }
+                if (networkError) {
+                    showFilePreview(`Network access warning: ${networkError}`, true);
+                }
+                updateActiveFileBanner();
+            })
+            .catch(() => {
+                previewServerIps = [];
+                existingSelect.innerHTML = '<option value="">-- Could not load files --</option>';
+                updateActiveFileBanner();
+            });
+        }
+
+        function uploadVmFile() {
+            if (!vmFileInput || !vmFileInput.files || vmFileInput.files.length === 0) {
+                showFilePreview('Choose an Excel file first.', true);
+                return;
+            }
+
+            const file = vmFileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = 'Uploading...';
+
+            fetch(`${API_BASE}/upload-file`, {
+                method: 'POST',
+                headers: authHeaders(),
+                body: formData,
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                uploadedFileValue = data.value;
+                uploadedFileLabel = data.label;
+                existingSelect.value = '';
+                updateActiveFileBanner();
+                previewSelectedFile(uploadedFileValue);
+                showFilePreview(`Uploaded: ${data.label}`);
+                if (vmFileInput) vmFileInput.value = '';
+                if (uploadFileName) uploadFileName.textContent = 'No file selected';
+            })
+            .catch(err => {
+                showFilePreview(`Upload failed: ${err.message}`, true);
+            })
+            .finally(() => {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload XLSX';
+            });
+        }
+
+        if (vmFileInput) {
+            vmFileInput.addEventListener('change', () => {
+                const name = (vmFileInput.files && vmFileInput.files[0]) ? vmFileInput.files[0].name : 'No file selected';
+                if (uploadFileName) uploadFileName.textContent = name;
+            });
+        }
+
+        // Initialize page from URL without intermediate view switching.
+        const initialPlatform = getPlatformFromPath();
+        if (initialPlatform) {
+            selectPlatform(initialPlatform, false, false);
+        } else {
+            showLanding(false, false);
+        }
+        markAppReady();
+        window.addEventListener('load', markAppReady, { once: true });
+
+        window.addEventListener('popstate', () => {
+            const routedPlatform = getPlatformFromPath();
+            if (routedPlatform) {
+                selectPlatform(routedPlatform, false, false);
+                return;
+            }
+            showLanding(false, false);
+        });
+
+        existingSelect.addEventListener('change', () => {
+            uploadedFileValue = '';
+            uploadedFileLabel = '';
+            updateActiveFileBanner();
+            previewSelectedFile();
+            updatePrecheckButtonState();
+        });
+
+        [singleIp, singleUsername, singlePassword, singleRootPassword].forEach(el => {
+            if (!el) return;
+            el.addEventListener('input', () => {
+                if (isSingleMode()) {
+                    updatePrecheckButtonState();
+                }
+            });
+        });
+
+        sortControls.forEach(ctrl => {
+            ctrl.addEventListener('change', (event) => {
+                const value = event.target.value;
+                syncSortControls(value);
+                sortAllGroups();
+            });
+        });
+
+        function createServerCard(ip) {
+            if (document.getElementById(`card-${ip.replace(/\./g, '-')}`)) return;
+            const card = document.createElement('div');
+            card.className = 'server-card';
+            card.id = `card-${ip.replace(/\./g, '-')}`;
+            card.innerHTML = `
+                <div class="server-header">
+                    <div class="server-main">
+                        <span class="server-ip">${ip}</span>
+                        <span class="server-latest" id="latest-${ip.replace(/\./g, '-')}">Waiting for connection...</span>
+                    </div>
+                    <div class="server-right">
+                        <button class="details-btn" type="button" onclick="toggleDetails('${ip}')">Details</button>
+                        <span class="status-badge badge-connecting" id="badge-${ip.replace(/\./g, '-')}">
+                            <span class="spinner"></span> Waiting
+                        </span>
+                    </div>
+                </div>
+                <div class="server-body collapsed" id="body-${ip.replace(/\./g, '-')}"></div>
+            `;
+            notInstalledGrid.appendChild(card);
+            sortAllGroups();
+            updateGroupCounts();
+        }
+
+        function toggleDetails(ip) {
+            const idSafe = ip.replace(/\./g, '-');
+            const body = document.getElementById(`body-${idSafe}`);
+            const card = document.getElementById(`card-${idSafe}`);
+            if (!body || !card) return;
+            body.classList.toggle('collapsed');
+            const btn = card.querySelector('.details-btn');
+            if (btn) btn.textContent = body.classList.contains('collapsed') ? 'Show Details' : 'Hide Details';
+        }
+
+        function addLog(ip, icon, iconClass, message) {
+            const body = document.getElementById(`body-${ip.replace(/\./g, '-')}`);
+            if (!body) return;
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-icon ${iconClass}">${icon}</span><span>${message}</span>`;
+            body.appendChild(entry);
+            body.scrollTop = body.scrollHeight;
+            const latest = document.getElementById(`latest-${ip.replace(/\./g, '-')}`);
+            if (latest) latest.textContent = message;
+        }
+
+        function setBadge(ip, text, badgeClass) {
+            const badge = document.getElementById(`badge-${ip.replace(/\./g, '-')}`);
+            if (badge) { badge.className = `status-badge ${badgeClass}`; badge.innerHTML = text; }
+        }
+
+        function classifyIssue(message = '', details = '') {
+            const text = `${message} ${details}`.toLowerCase();
+
+            if (text.includes('platform mismatch') || text.includes('selected') && text.includes('but expected')) {
+                return 'Platform Mismatch';
+            }
+
+            if (text.includes('auth') || text.includes('authentication') || text.includes('permission denied') || text.includes('invalid credential') || text.includes('login failed') || text.includes('access denied')) {
+                return 'Credentials Invalid';
+            }
+            if (text.includes('timed out') || text.includes('timeout') || text.includes('host down') || text.includes('no route to host') || text.includes('network is unreachable') || text.includes('connection refused')) {
+                return 'VM Unreachable';
+            }
+            if (text.includes('name or service not known') || text.includes('temporary failure in name resolution') || text.includes('could not resolve') || text.includes('dns')) {
+                return 'DNS Issue';
+            }
+            if (text.includes('connection reset') || text.includes('connection closed') || text.includes('broken pipe')) {
+                return 'Connection Dropped';
+            }
+            if (text.includes('file not found') || text.includes('no such file') || text.includes('not found')) {
+                return 'Required File Missing';
+            }
+            if (text.includes('disk full') || text.includes('no space left')) {
+                return 'Disk Full';
+            }
+            if (text.includes('sudo') || text.includes('not permitted') || text.includes('operation not permitted')) {
+                return 'Permission Issue';
+            }
+            return 'Action Required';
+        }
+
+        function setCardStatus(ip, statusClass) {
+            const card = document.getElementById(`card-${ip.replace(/\./g, '-')}`);
+            if (!card) return;
+
+            card.className = `server-card ${statusClass}`;
+            moveCardToGroup(ip, 'not-installed');
+            updateStickySummary();
+        }
+
+        function addError(ip, details) {
+            const body = document.getElementById(`body-${ip.replace(/\./g, '-')}`);
+            if (!body || !details) return;
+            const div = document.createElement('div');
+            div.className = 'error-details';
+            div.textContent = details;
+            body.appendChild(div);
+        }
+
+        function runPrecheck() {
+            if (isSingleMode()) {
+                const payload = getSinglePayload();
+                if (!isSingleFormValid()) {
+                    showSinglePreview('Please fill all required fields.', true);
+                    return;
+                }
+
+                precheckBtn.disabled = true;
+                startBtn.disabled = true;
+                precheckBtn.textContent = 'Running Precheck...';
+                clearServerGroups();
+                setStatusBoardVisible(true);
+                document.getElementById('summary').style.display = 'none';
+                hidePrecheckNote();
+                hideFilePreview();
+                showSinglePreview('Checking server...');
+
+                createServerCard(payload.ip);
+                setBadge(payload.ip, '<span class="spinner"></span> Checking', 'badge-connecting');
+                setCardStatus(payload.ip, 'status-progress');
+                addLog(payload.ip, '•', 'info', 'Precheck started...');
+
+                fetch(`${API_BASE}/precheck-single/${currentPlatform}`, {
+                    method: 'POST',
+                    headers: authHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload)
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+
+                    const installed = data.installed || [];
+                    const installedDetails = data.installed_details || [];
+                    const toDeploy = data.to_deploy || [];
+                    const errors = data.errors || [];
+                    const precheckDetails = data.precheck_details || [];
+                    renderScorecard(precheckDetails);
+
+                    const installedDetailsByIp = {};
+                    installedDetails.forEach(item => {
+                        if (item && item.ip) installedDetailsByIp[item.ip] = item;
+                    });
+                    const precheckByIp = {};
+                    precheckDetails.forEach(item => {
+                        if (item && item.ip) precheckByIp[item.ip] = item;
+                    });
+
+                    precheckTargets = toDeploy;
+                    precheckInstalled = installed;
+                    precheckInstalledDetails = installedDetails;
+
+                    const detail = precheckByIp[payload.ip];
+                    if (detail && detail.credential_valid === true) {
+                        addLog(payload.ip, '✓', 'success', 'Credential validation: valid.');
+                    } else if (detail && detail.credential_valid === false) {
+                        setBadge(payload.ip, '✕ Credential Invalid', 'badge-failed');
+                        setCardStatus(payload.ip, 'status-failed');
+                        addLog(payload.ip, '✕', 'warn', 'Credential validation: invalid.');
+                    }
+
+                    installed.forEach(ip => {
+                        const detail = installedDetailsByIp[ip] || {};
+                        const version = detail.version || '';
+                        const versionSuffix = version ? ` (${version})` : '';
+                        setBadge(ip, '✓ Installed (Precheck)', 'badge-installed');
+                        setCardStatus(ip, 'status-installed');
+                        addLog(ip, '✓', 'success', `Precheck: already installed${versionSuffix}. Skipping deployment.`);
+                    });
+
+                    toDeploy.forEach(ip => {
+                        const detail = precheckByIp[ip] || {};
+                        if (detail.credential_valid === false) {
+                            setBadge(ip, '✕ Credential Invalid', 'badge-failed');
+                            setCardStatus(ip, 'status-failed');
+                            addLog(ip, '✕', 'warn', 'Precheck: invalid credentials. Update and re-run precheck.');
+                            return;
+                        }
+                        setBadge(ip, '⚙ Ready to Deploy', 'badge-progress');
+                        setCardStatus(ip, 'status-progress');
+                        addLog(ip, '•', 'info', 'Precheck: Trellix not detected. Ready for deployment.');
+                    });
+
+                    errors.forEach(item => {
+                        if (!item || !item.ip) return;
+                        const issue = classifyIssue(item.reason || '', '');
+                        setBadge(item.ip, `⚠ ${issue}`, 'badge-failed');
+                        setCardStatus(item.ip, 'status-failed');
+                        addLog(item.ip, '⚠', 'warn', item.reason || 'Precheck failed.');
+                    });
+
+                    if (toDeploy.length > 0) {
+                        startBtn.disabled = false;
+                        showPrecheckNote(`${installed.length} already installed, ${toDeploy.length} ready to deploy, ${errors.length} precheck failed.`);
+                    } else if (errors.length > 0) {
+                        startBtn.disabled = true;
+                        showPrecheckNote(`Precheck failed for ${errors.length} server(s). Fix connectivity/credentials and re-run precheck.`);
+                    } else {
+                        startBtn.disabled = true;
+                        showPrecheckNote('Server already has Trellix installed. No deployment needed.');
+                        showSummary();
+                    }
+                })
+                .catch(err => {
+                    showSinglePreview(err.message || 'Precheck failed.', true);
+                    clearServerGroups();
+                    setStatusBoardVisible(false);
+                })
+                .finally(() => {
+                    updatePrecheckButtonState();
+                    precheckBtn.textContent = 'Run Precheck';
+                });
+
+                return;
+            }
+
+            const activeValue = getActiveFileValue();
+            if (!activeValue) return;
+
+            precheckBtn.disabled = true;
+            startBtn.disabled = true;
+            precheckBtn.textContent = 'Running Precheck...';
+            clearServerGroups();
+            setStatusBoardVisible(true);
+            document.getElementById('summary').style.display = 'none';
+            hidePrecheckNote();
+
+            // Show server cards immediately while backend checks run.
+            const instantIps = (previewServerIps || []).slice();
+            instantIps.forEach(ip => {
+                createServerCard(ip);
+                setBadge(ip, '<span class="spinner"></span> Checking', 'badge-connecting');
+                setCardStatus(ip, 'status-progress');
+                addLog(ip, '•', 'info', 'Precheck started...');
+            });
+
+            fetch(`${API_BASE}/precheck-existing/${currentPlatform}`, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ filename: activeValue })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                const allServers = data.all_servers || [];
+                const installed = data.installed || [];
+                const installedDetails = data.installed_details || [];
+                const toDeploy = data.to_deploy || [];
+                const errors = data.errors || [];
+                const precheckDetails = data.precheck_details || [];
+                renderScorecard(precheckDetails);
+
+                const installedDetailsByIp = {};
+                installedDetails.forEach(item => {
+                    if (item && item.ip) {
+                        installedDetailsByIp[item.ip] = item;
+                    }
+                });
+                const precheckByIp = {};
+                precheckDetails.forEach(item => {
+                    if (item && item.ip) {
+                        precheckByIp[item.ip] = item;
+                    }
+                });
+
+                previewServerIps = allServers.slice();
+
+                precheckTargets = toDeploy;
+                precheckInstalled = installed;
+                precheckInstalledDetails = installedDetails;
+
+                allServers.forEach(ip => createServerCard(ip));
+
+                allServers.forEach(ip => {
+                    const detail = precheckByIp[ip];
+                    if (!detail) return;
+                    if (detail.credential_valid === true) {
+                        addLog(ip, '✓', 'success', 'Credential validation: valid.');
+                    } else if (detail.credential_valid === false) {
+                        setBadge(ip, '✕ Credential Invalid', 'badge-failed');
+                        setCardStatus(ip, 'status-failed');
+                        addLog(ip, '✕', 'warn', 'Credential validation: invalid.');
+                    }
+                });
+
+                installed.forEach(ip => {
+                    const detail = installedDetailsByIp[ip] || {};
+                    const version = detail.version || '';
+                    const versionSuffix = version ? ` (${version})` : '';
+                    setBadge(ip, '✓ Installed (Precheck)', 'badge-installed');
+                    setCardStatus(ip, 'status-installed');
+                    addLog(ip, '✓', 'success', `Precheck: already installed${versionSuffix}. Skipping deployment.`);
+                });
+
+                toDeploy.forEach(ip => {
+                    const detail = precheckByIp[ip] || {};
+                    if (detail.credential_valid === false) {
+                        setBadge(ip, '✕ Credential Invalid', 'badge-failed');
+                        setCardStatus(ip, 'status-failed');
+                        addLog(ip, '✕', 'warn', 'Precheck: invalid credentials. Update and re-run precheck.');
+                        return;
+                    }
+                    setBadge(ip, '⚙ Ready to Deploy', 'badge-progress');
+                    setCardStatus(ip, 'status-progress');
+                    addLog(ip, '•', 'info', 'Precheck: Trellix not detected. Ready for deployment.');
+                });
+
+                errors.forEach(item => {
+                    if (!item || !item.ip) return;
+                    const issue = classifyIssue(item.reason || '', '');
+                    setBadge(item.ip, `⚠ ${issue}`, 'badge-failed');
+                    setCardStatus(item.ip, 'status-failed');
+                    addLog(item.ip, '⚠', 'warn', item.reason || 'Precheck failed.');
+                });
+
+                if (toDeploy.length > 0) {
+                    startBtn.disabled = false;
+                    showPrecheckNote(`${installed.length} already installed, ${toDeploy.length} ready to deploy, ${errors.length} precheck failed.`);
+                } else if (errors.length > 0) {
+                    startBtn.disabled = true;
+                    showPrecheckNote(`Precheck failed for ${errors.length} server(s). Fix connectivity/credentials and re-run precheck.`);
+                } else {
+                    startBtn.disabled = true;
+                    showPrecheckNote('All selected VMs already have Trellix installed. No deployment needed.');
+                    showSummary();
+                }
+            })
+            .catch(err => {
+                alert('Precheck error: ' + err.message);
+                clearServerGroups();
+                setStatusBoardVisible(false);
+            })
+            .finally(() => {
+                updatePrecheckButtonState();
+                precheckBtn.textContent = 'Run Precheck';
+            });
+        }
+
+        function startProcess() {
+            if (!precheckTargets) {
+                alert('Run Precheck first, then start deployment.');
+                return;
+            }
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<span class="spinner"></span> Processing...';
+            setStatusBoardVisible(true);
+            document.getElementById('summary').style.display = 'none';
+            runStartMs = Date.now();
+
+            const url = isSingleMode()
+                ? `${API_BASE}/use-single/${currentPlatform}`
+                : `${API_BASE}/use-existing/${currentPlatform}`;
+
+            const body = isSingleMode()
+                ? {
+                    ...getSinglePayload(),
+                    target_ips: precheckTargets,
+                    precheck_installed_details: precheckInstalledDetails,
+                    retry_count: Math.max(0, Math.min(5, parseInt(retryCountInput?.value || '2', 10) || 2)),
+                }
+                : {
+                    filename: getActiveFileValue(),
+                    target_ips: precheckTargets,
+                    precheck_installed_details: precheckInstalledDetails,
+                    retry_count: Math.max(0, Math.min(5, parseInt(retryCountInput?.value || '2', 10) || 2)),
+                };
+
+            fetch(url, {
+                method: 'POST',
+                headers: authHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(body)
+            })
+            .then(r => r.json())
+            .then(handleResponse)
+            .catch(err => {
+                alert('Error: ' + err);
+                startBtn.disabled = false;
+                startBtn.innerHTML = 'Start Deployment';
+                setStatusBoardVisible(false);
+            });
+        }
+
+        function handleResponse(data) {
+            if (data.error) {
+                alert(data.error);
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg> Start Deployment';
+                setStatusBoardVisible(false);
+                return;
+            }
+
+            setStatusBoardVisible(true);
+            activeSessionId = data.session_id || '';
+            if (!data.servers || data.servers.length === 0) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg> Start Deployment';
+                showSummary();
+                return;
+            }
+
+            const evtSource = new EventSource(`${API_BASE}/stream/${data.session_id}?token=${encodeURIComponent(authToken || '')}`);
+            evtSource.onmessage = (e) => {
+                const event = JSON.parse(e.data);
+                const ip = event.ip;
+                if (event.status === 'done') {
+                    evtSource.close();
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 3l14 9-14 9V3z"/></svg> Start Deployment';
+                    showSummary();
+                    updateStickySummary();
+                    return;
+                }
+                switch (event.status) {
+                    case 'connecting':
+                        setBadge(ip, '<span class="spinner"></span> Connecting', 'badge-connecting');
+                        addLog(ip, '→', 'info', event.message); break;
+                    case 'progress':
+                        setBadge(ip, '⚙ In Progress', 'badge-progress');
+                        setCardStatus(ip, 'status-progress');
+                        addLog(ip, '✓', 'success', event.message); break;
+                    case 'log':
+                        addLog(ip, '•', 'info', event.message); break;
+                    case 'installed':
+                        setBadge(ip, '✓ Installed', 'badge-installed');
+                        setCardStatus(ip, 'status-installed');
+                        addLog(ip, '✓', 'success', event.message); break;
+                    case 'error':
+                        setBadge(ip, `✗ ${classifyIssue(event.message, event.details)}`, 'badge-error');
+                        setCardStatus(ip, 'status-error');
+                        addLog(ip, '✗', 'error', event.message);
+                        if (event.details) addError(ip, event.details); break;
+                    case 'warning':
+                        setBadge(ip, `⚠ ${classifyIssue(event.message, event.details)}`, 'badge-warning');
+                        setCardStatus(ip, 'status-warning');
+                        addLog(ip, '⚠', 'warn', event.message);
+                        if (event.details) addError(ip, event.details); break;
+                }
+                updateStickySummary();
+            };
+        }
+
+        function showSummary() {
+            const cards = Array.from(notInstalledGrid.children);
+            const success = cards.filter(card => card.classList.contains('status-installed')).length;
+            const notInstalled = cards.length - success;
+            document.getElementById('successCount').textContent = success;
+            document.getElementById('warningCount').textContent = notInstalled;
+            const failures = notInstalledGrid.querySelectorAll('.status-error').length;
+            const subtitle = document.getElementById('summarySubtitle');
+            const emailNote = document.getElementById('emailNote');
+            if (failures > 0) {
+                subtitle.textContent = 'Failure report has been sent to your email';
+                emailNote.style.display = 'flex';
+                document.getElementById('emailNoteText').textContent = 'Failure report emailed to mekala.manikanta@mitel.com';
+            } else {
+                subtitle.textContent = 'All servers deployed successfully!';
+                emailNote.style.display = 'none';
+            }
+            document.getElementById('summary').style.display = 'block';
+            updateStickySummary();
+        }
+
+        if (loginBtn) loginBtn.addEventListener('click', login);
+        if (logoutBtn) logoutBtn.addEventListener('click', logout);
+        if (saveProfileBtn) saveProfileBtn.addEventListener('click', saveProfile);
+        if (deleteProfileBtn) deleteProfileBtn.addEventListener('click', deleteProfile);
+        if (profileSelect) profileSelect.addEventListener('change', applySelectedProfile);
+        if (validateSourceBtn) validateSourceBtn.addEventListener('click', validatePackageSource);
+        if (rerunFailedBtn) rerunFailedBtn.addEventListener('click', rerunFailed);
+        if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => exportRun('csv'));
+        if (exportXlsxBtn) exportXlsxBtn.addEventListener('click', () => exportRun('xlsx'));
+        filterChips.forEach(chip => {
+            chip.addEventListener('click', () => {
+                const v = chip.getAttribute('data-chip') || 'all';
+                syncSortControls(v);
+                sortAllGroups();
+            });
+        });
+        updateAuthUi();
+        if (authToken) {
+            loadProfiles();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,79 @@
+services:
+  trelix:
+    build: .
+    container_name: trelix
+    depends_on:
+      - trelixdb
+    ports:
+      - "5000:5000"
+    environment:
+      - TRELLIX_BIND_HOST=0.0.0.0
+      - TRELLIX_PORT=5000
+      - TRELLIX_DEBUG=0
+      - AUTH_ENABLED=0
+      - PROFILE_TEMPLATES_ENABLED=0
+      - ENABLE_RESULT_EXPORTS=1
+      - TOKEN_TTL_SECONDS=43200
+      - SMB_SERVER=10.211.34.118
+      - SMB_SHARE=api
+      - NETWORK_USER=Administrator
+      - NETWORK_PASS=${NETWORK_PASS:-Mitel@123}
+      - SMB_CLIENT_NAME=trellix-manager
+      - SHARE_DIR_MXONE=/upgrade_credentials/mxone
+      - SHARE_DIR_MIVB=/trelix_credentails/mivb
+      - SHARE_DIR_MBG=/trelix_credentails/mbg
+      - SHARE_DIR_MIV5000=/upgrade_credentials/miv5000
+      - SHARE_DIR_WINDOWS=/trelix_credentials/windows
+      - WINRM_PORT=5985
+      - WINRM_TRANSPORT=ntlm
+      - WINDOWS_INSTALLER_UNC=\\10.211.34.118\api\trelix_credentials\windows
+      - WINDOWS_SCP_ENABLED=1
+      - WINDOWS_SCP_SOURCE_HOST=${WINDOWS_SCP_SOURCE_HOST:-10.211.27.74}
+      - WINDOWS_SCP_SOURCE_PORT=22
+      - WINDOWS_SCP_SOURCE_USER=${WINDOWS_SCP_SOURCE_USER:-root}
+      - WINDOWS_SCP_SOURCE_PASS=${WINDOWS_SCP_SOURCE_PASS:-Mitel5000}
+      - WINDOWS_SCP_SOURCE_PATH=${WINDOWS_SCP_SOURCE_PATH:-/home/Fireeye/IMAGE_HX_AGENT_WIN_36.30.37.zip}
+      - WINDOWS_PACKAGE_BASENAME=${WINDOWS_PACKAGE_BASENAME:-IMAGE_HX_AGENT_WIN_36.30.37}
+      - WINDOWS_SCP_TARGET_DIR=${WINDOWS_SCP_TARGET_DIR:-C:/Users/Administrator/Downloads}
+      - WINDOWS_SCP_AUTO_SETUP_SSHD=${WINDOWS_SCP_AUTO_SETUP_SSHD:-1}
+      - WINDOWS_SCP_UNC_FALLBACK=${WINDOWS_SCP_UNC_FALLBACK:-0}
+      - DB_HOST=trelixdb
+      - DB_PORT=5432
+      - DB_NAME=trelix
+      - DB_USER=trelix_user
+      - DB_PASSWORD=trelix_password
+      - DATABASE_URL=postgresql://trelix_user:trelix_password@trelixdb:5432/trelix
+      - SECURE_EXPORT_DIR=/secure_data
+    volumes:
+      # Mount uploads folder so uploaded Excel files persist on host
+      - ./uploads:/app/uploads
+      - C:/trelix_data_secure:/secure_data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5000/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  trelixdb:
+    image: postgres:16-alpine
+    container_name: trelixdb
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=trelix
+      - POSTGRES_USER=trelix_user
+      - POSTGRES_PASSWORD=trelix_password
+    volumes:
+      - trelix_postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trelix_user -d trelix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  trelix_postgres_data:
