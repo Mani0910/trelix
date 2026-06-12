@@ -1,3 +1,43 @@
+# ============================================================
+# IMPORTANT — Windows VM prerequisite
+# Before deploying Trellix to any Windows VM, run
+# windows_prereq_setup.ps1 as Administrator on that VM.
+# At minimum the following must be executed in an elevated
+# PowerShell / CMD on each target Windows host:
+#
+#   Step 1 — Enable-PSRemoting -Force
+#   Step 2 — Enable-NetFirewallRule -Name "WINRM-HTTP-In-TCP"
+#             (or create it if missing for TCP 5985)
+#   Step 3 — New-NetFirewallRule -Name "AllowSSH" -DisplayName "Allow SSH Port 22" \
+#               -Enabled True -Profile Any -Direction Inbound -Action Allow \
+#               -Protocol TCP -LocalPort 22
+#   Step 4 — Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+#             Start-Service sshd
+#             Set-Service -Name sshd -StartupType Automatic
+#   (File transfer / Trellix deployment runs after these steps)
+# 
+# ============================================================
+# NEW FEATURES
+# ============================================================
+# 
+# Dashboard & Monitoring:
+#   - GET /api/dashboard/metrics - Real-time metrics and KPIs
+#   - GET /api/analytics/performance - Success rates and trend analysis
+#   - GET /api/audit-logs - Audit log viewer with filtering
+#   - GET /api/servers/search - Advanced server search and filtering
+#
+# CLI Tool:
+#   - trelix-cli deployed in container at /usr/local/bin/trelix-cli
+#   - Usage: docker exec trelix trelix-cli --help
+#   - Enables scripting and automation for CI/CD pipelines
+#
+# Dark Mode:
+#   - Automatic detection based on system preferences
+#   - Manual toggle available in UI
+#   - Theme persisted in localStorage
+#
+# ============================================================
+
 services:
   trelix:
     build: .
@@ -36,6 +76,8 @@ services:
       - WINDOWS_PACKAGE_BASENAME=${WINDOWS_PACKAGE_BASENAME:-IMAGE_HX_AGENT_WIN_36.30.37}
       - WINDOWS_SCP_TARGET_DIR=${WINDOWS_SCP_TARGET_DIR:-C:/Users/Administrator/Downloads}
       - WINDOWS_SCP_AUTO_SETUP_SSHD=${WINDOWS_SCP_AUTO_SETUP_SSHD:-1}
+      - WINDOWS_SCP_ENSURE_PSREMOTING=${WINDOWS_SCP_ENSURE_PSREMOTING:-1}
+      - WINDOWS_SCP_FIREWALL_RULE_NAME=${WINDOWS_SCP_FIREWALL_RULE_NAME:-AllowSSH}
       - WINDOWS_SCP_UNC_FALLBACK=${WINDOWS_SCP_UNC_FALLBACK:-0}
       - DB_HOST=trelixdb
       - DB_PORT=5432

@@ -119,6 +119,36 @@ def log_structured(event_type, **fields):
     except Exception:
         logger.info(str(payload))
 
+
+def _log_audit(action_type, resource_type=None, resource_id=None, details=None, user_id=None, req=None):
+    """Log an audit event to the database."""
+    if not _db_enabled():
+        return
+    
+    try:
+        conn = _get_db_conn()
+        with conn:
+            with conn.cursor() as cur:
+                ip_address = None
+                if req:
+                    ip_address = req.remote_addr
+                
+                details_str = json.dumps(details) if details and isinstance(details, dict) else str(details or "")
+                
+                cur.execute(
+                    """
+                    INSERT INTO audit_logs (user_id, action_type, resource_type, resource_id, details, ip_address, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    """,
+                    (user_id, action_type, resource_type, resource_id, details_str, ip_address)
+                )
+    except Exception as exc:
+        logger.error(f"[AUDIT] Failed to log audit event: {exc}")
+    finally:
+        if conn:
+            conn.close()
+
+
 # Rate limiting: 100 requests per user (by IP)
 limiter = Limiter(
     app=app,
@@ -213,6 +243,8 @@ PLATFORM_CONFIG = {
         "package_basename": os.getenv("WINDOWS_PACKAGE_BASENAME", "IMAGE_HX_AGENT_WIN_36.30.37").strip(),
         "scp_target_dir": os.getenv("WINDOWS_SCP_TARGET_DIR", r"C:\Users\Administrator\Downloads").strip(),
         "scp_auto_setup_sshd": str(os.getenv("WINDOWS_SCP_AUTO_SETUP_SSHD", "1")).strip().lower() in ("1", "true", "yes", "on"),
+        "scp_ensure_psremoting": str(os.getenv("WINDOWS_SCP_ENSURE_PSREMOTING", "1")).strip().lower() in ("1", "true", "yes", "on"),
+        "scp_firewall_rule_name": os.getenv("WINDOWS_SCP_FIREWALL_RULE_NAME", "AllowSSH").strip() or "AllowSSH",
         "scp_unc_fallback": str(os.getenv("WINDOWS_SCP_UNC_FALLBACK", "0")).strip().lower() in ("1", "true", "yes", "on"),
     },
 }
@@ -1499,6 +1531,15 @@ def _windows_scp_local_zip(config):
     source_name = os.path.basename(remote_path.rstrip("/\\")) or "windows_agent.zip"
     local_path = os.path.join(tempfile.gettempdir(), f"trelix_{abs(hash(cache_key))}_{source_name}")
 
+    # If cached path exists but is 0 bytes, discard it and re-download.
+    if os.path.exists(local_path) and os.path.getsize(local_path) == 0:
+        try:
+            os.remove(local_path)
+        except Exception:
+            pass
+        with _WINDOWS_SCP_CACHE_LOCK:
+            _WINDOWS_SCP_CACHE.pop(cache_key, None)
+
     if not os.path.exists(local_path):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1515,16 +1556,30 @@ def _windows_scp_local_zip(config):
             sftp = ssh.open_sftp()
             try:
                 try:
-                    sftp.stat(remote_path)
+                    remote_stat = sftp.stat(remote_path)
                 except FileNotFoundError:
                     raise RuntimeError(f"Linux source ZIP not found: {remote_path}")
                 except OSError as exc:
                     raise RuntimeError(f"Cannot access Linux source ZIP: {remote_path} ({exc})")
+                if remote_stat.st_size == 0:
+                    raise RuntimeError(
+                        f"Linux source ZIP is 0 bytes — file may not have been placed yet: {remote_path}"
+                    )
                 sftp.get(remote_path, local_path)
             finally:
                 sftp.close()
         finally:
             ssh.close()
+
+    # Final size guard after download.
+    if os.path.exists(local_path) and os.path.getsize(local_path) == 0:
+        try:
+            os.remove(local_path)
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Downloaded ZIP is 0 bytes — ensure the file exists and is complete on the Linux host: {remote_path}"
+        )
 
     with _WINDOWS_SCP_CACHE_LOCK:
         _WINDOWS_SCP_CACHE[cache_key] = local_path
@@ -1788,43 +1843,93 @@ if ($zips.Count -gt 0) {{ Write-Output 'HAS_ZIP' }}
         return False, 0, str(exc)
 
 
-def _ensure_windows_sshd_for_scp(session):
-        """Ensure OpenSSH server and firewall rule exist for SCP transfers."""
-        ps = r"""
+def _ensure_windows_sshd_for_scp(session, ensure_psremoting=True, firewall_rule_name="AllowSSH"):
+        """Ensure OpenSSH server and required Windows remoting/firewall rules for SCP transfers.
+
+                Runs all prerequisite commands in the correct order before file transfer:
+          1. Enable-PSRemoting -Force
+                    2. WinRM-HTTP-In-TCP firewall rule (port 5985)
+                    3. AllowSSH firewall rule (port 22, all profiles)
+                    4. OpenSSH-Server-In-TCP firewall rule
+                    5. Install OpenSSH.Server capability (if missing)
+                    6. Start-Service sshd + Set-Service Automatic
+        Then waits up to 15 s for port 22 to start listening.
+        """
+        rule_name = str(firewall_rule_name or "AllowSSH").replace("'", "''")
+        psremoting_block = ""
+        if ensure_psremoting:
+            psremoting_block = f"""
+# Step 1: Enable PSRemoting (must run before file transfer)
+Enable-PSRemoting -Force -ErrorAction SilentlyContinue | Out-Null
+
+# Step 2: WinRM firewall rule — ensure TCP 5985 is enabled
+$winrmRule = Get-NetFirewallRule -Name 'WINRM-HTTP-In-TCP' -ErrorAction SilentlyContinue
+if (-not $winrmRule) {{
+    New-NetFirewallRule -Name 'WINRM-HTTP-In-TCP' -DisplayName 'Windows Remote Management (HTTP-In)' -Enabled True -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5985 | Out-Null
+}} else {{
+    Set-NetFirewallRule -Name 'WINRM-HTTP-In-TCP' -Enabled True | Out-Null
+}}
+
+# Step 3: AllowSSH firewall rule — port 22, all profiles (must run before file transfer)
+$allowRule = Get-NetFirewallRule -Name '{rule_name}' -ErrorAction SilentlyContinue
+if (-not $allowRule) {{
+    New-NetFirewallRule -Name '{rule_name}' -DisplayName 'Allow SSH Port 22' -Enabled True -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22 | Out-Null
+}} else {{
+    Set-NetFirewallRule -Name '{rule_name}' -Enabled True -Profile Any -Direction Inbound -Action Allow | Out-Null
+}}
+
+# Step 4: OpenSSH-Server-In-TCP rule
+$sshdRule = Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue
+if (-not $sshdRule) {{
+    New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
+}} else {{
+    Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -Enabled True | Out-Null
+}}
+"""
+        # Order: 1) PSRemoting + firewall rules, then capability, sshd start, and wait for port 22
+        ps = f"""
+{psremoting_block}
+
+# Step 5: Install OpenSSH.Server capability if not already installed
+$cap = Get-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue
+if ($cap -and $cap.State -ne 'Installed') {{
+    Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 | Out-Null
+}}
+
+# Step 6: Start sshd and set to automatic
 $svc = Get-Service -Name sshd -ErrorAction SilentlyContinue
-if ($svc) {
-    if ($svc.Status -ne 'Running') {
+if ($svc) {{
+    if ($svc.Status -ne 'Running') {{
         Start-Service sshd -ErrorAction SilentlyContinue
         Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
-        $svc = Get-Service -Name sshd -ErrorAction SilentlyContinue
-    }
-    if ($svc -and $svc.Status -eq 'Running') { Write-Output 'SSHD_READY'; exit 0 }
-}
+    }}
+}} else {{
+    Start-Service sshd -ErrorAction SilentlyContinue
+    Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
+}}
 
-$cap = Get-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction SilentlyContinue
-if ($cap -and $cap.State -ne 'Installed') {
-    Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 | Out-Null
-}
-
-Start-Service sshd -ErrorAction SilentlyContinue
-Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue
-
-$rule = Get-NetFirewallRule -Name sshd -ErrorAction SilentlyContinue
-if (-not $rule) {
-    New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null
-}
+# Wait up to 15 s for port 22 to actually start listening (firewall + sshd bind time)
+$waited = 0
+$listening = $false
+do {{
+    Start-Sleep -Seconds 2
+    $waited += 2
+    $tcpCheck = netstat -an 2>$null | Select-String '0\.0\.0\.0:22\s' 
+    if ($tcpCheck) {{ $listening = $true }}
+}} while (-not $listening -and $waited -lt 15)
 
 $svc = Get-Service -Name sshd -ErrorAction SilentlyContinue
-if ($svc -and $svc.Status -eq 'Running') {
-    Write-Output 'SSHD_READY'
-} else {
+if ($svc -and $svc.Status -eq 'Running') {{
+    if ($listening) {{ Write-Output 'SSHD_READY' }} else {{ Write-Output 'SSHD_RUNNING_PORT_WAIT' }}
+}} else {{
     Write-Output 'SSHD_NOT_READY'
-}
+}}
 """
 
         res = session.run_ps(ps)
         out = ((res.std_out or b"") + (res.std_err or b"")).decode(errors="replace")
-        return ("SSHD_READY" in out, out.strip())
+        ready = "SSHD_READY" in out or "SSHD_RUNNING_PORT_WAIT" in out
+        return (ready, out.strip())
 
 
 def _verify_linux_platform_identity(ssh, platform):
@@ -1985,11 +2090,30 @@ if ($svc -and $svc.Status -eq 'Running') {
                 )
                 if bool(config.get("scp_auto_setup_sshd", True)):
                     send_event(session_id, ip, "progress", "Checking OpenSSH (sshd) status for SCP...")
-                    ssh_ready, ssh_msg = _ensure_windows_sshd_for_scp(session)
+                    ssh_ready, ssh_msg = _ensure_windows_sshd_for_scp(
+                        session,
+                        ensure_psremoting=bool(config.get("scp_ensure_psremoting", True)),
+                        firewall_rule_name=config.get("scp_firewall_rule_name") or "AllowSSH",
+                    )
                     if ssh_ready:
-                        send_event(session_id, ip, "log", "OpenSSH service is installed and running.")
+                        send_event(session_id, ip, "log", "OpenSSH service is installed and running; PSRemoting/firewall setup applied.")
                     else:
                         send_event(session_id, ip, "warning", "OpenSSH setup could not be fully verified", ssh_msg)
+
+                    # Socket-level probe: confirm port 22 is actually reachable before SCP attempt.
+                    port22_open = False
+                    for _attempt in range(6):  # up to ~30 s
+                        try:
+                            with socket.create_connection((ip, 22), timeout=5):
+                                port22_open = True
+                                break
+                        except OSError:
+                            time.sleep(5)
+                    if not port22_open:
+                        raise RuntimeError(
+                            f"Port 22 is not reachable on {ip} after sshd setup. "
+                            "Run windows_prereq_setup.ps1 on the Windows VM first, then retry."
+                        )
                 send_event(session_id, ip, "progress", r"Transferring package to C:\Users\Administrator\Downloads (SCP with WinRM fallback)...")
                 session.run_ps(r"New-Item -Path 'C:\Users\Administrator\Downloads' -ItemType Directory -Force | Out-Null")
                 local_zip = _windows_scp_local_zip(config)
@@ -2161,6 +2285,9 @@ if ($exitCode -eq 0 -or $exitCode -eq 3010) {{
   $svc = Get-Service -Name xagt -ErrorAction SilentlyContinue
   if (-not $svc) {{ $svc = Get-Service -Name masvc -ErrorAction SilentlyContinue }}
   if ($svc -and $svc.Status -eq 'Running') {{ Write-Output 'INSTALL_OK_RUNNING' }} else {{ Write-Output 'INSTALL_OK_NOT_RUNNING' }}
+  # Emit sc query xagt output for verification
+  $scOut = sc.exe query xagt 2>&1
+  Write-Output ('SC_QUERY_XAGT:' + ($scOut -join ' | '))
 }} else {{
   Write-Output ('INSTALL_EXIT:' + $exitCode)
   Write-Output 'INSTALL_FAILED'
@@ -2170,6 +2297,14 @@ if ($exitCode -eq 0 -or $exitCode -eq 3010) {{
     install_out = ((run_res.std_out or b"") + (run_res.std_err or b"")).decode(errors="replace")
 
     send_event(session_id, ip, "progress", "Finalizing service status...")
+
+    # Log sc query xagt output if captured
+    for _ln in install_out.splitlines():
+        if _ln.startswith("SC_QUERY_XAGT:"):
+            sc_status = _ln.split("SC_QUERY_XAGT:", 1)[1].strip()
+            if sc_status:
+                send_event(session_id, ip, "log", f"sc query xagt: {sc_status}")
+            break
 
     if "INSTALL_OK_RUNNING" in install_out:
         win_version = _get_windows_trellix_version(session)
@@ -3116,17 +3251,13 @@ def precheck_existing(platform):
 
     precheck_results = _precheck_details_to_results(precheck_details)
     precheck_run_id = _create_deployment_run(request, platform, f"precheck:{value}")
-    # Save precheck results in background so UI is not blocked at "Checking...".
-    threading.Thread(
-        target=_save_run_results_to_db,
-        kwargs={
-            "run_id": precheck_run_id,
-            "platform": platform,
-            "servers": servers,
-            "per_ip_results": precheck_results,
-        },
-        daemon=True,
-    ).start()
+    # Persist immediately so DB and secure XLSX reflect precheck as soon as user clicks run.
+    _save_run_results_to_db(
+        run_id=precheck_run_id,
+        platform=platform,
+        servers=servers,
+        per_ip_results=precheck_results,
+    )
 
     return jsonify({
         "platform_title": config["title"],
@@ -3186,17 +3317,13 @@ def precheck_single(platform):
 
     precheck_results = _precheck_details_to_results(precheck_details)
     precheck_run_id = _create_deployment_run(request, platform, 'precheck:manual:single')
-    # Save precheck results in background so UI is not blocked at "Checking...".
-    threading.Thread(
-        target=_save_run_results_to_db,
-        kwargs={
-            "run_id": precheck_run_id,
-            "platform": platform,
-            "servers": [server],
-            "per_ip_results": precheck_results,
-        },
-        daemon=True,
-    ).start()
+    # Persist immediately so DB and secure XLSX reflect precheck as soon as user clicks run.
+    _save_run_results_to_db(
+        run_id=precheck_run_id,
+        platform=platform,
+        servers=[server],
+        per_ip_results=precheck_results,
+    )
 
     return jsonify({
         "platform_title": config["title"],
@@ -3343,26 +3470,73 @@ def _precheck_one_server(platform, server):
     if platform == 'windows':
         cfg = get_platform_config('windows') or {}
         winrm_port = int(cfg.get('winrm_port', 5985))
-        endpoint = f"http://{ip}:{winrm_port}/wsman"
         transport = cfg.get("winrm_transport", "ntlm")
 
         # Windows flow should use WinRM reachability, not SSH/PuTTY port checks.
-        if not _is_system_reachable(ip, port=winrm_port, timeout=5):
+        # Try configured port first, then common fallback (5985/5986) to avoid false negatives.
+        candidate_ports = []
+        for p in (winrm_port, 5985, 5986):
+            if p not in candidate_ports:
+                candidate_ports.append(p)
+
+        reachable_port = None
+        for attempt in range(3):
+            for p in candidate_ports:
+                if _is_system_reachable(ip, port=p, timeout=5):
+                    reachable_port = p
+                    break
+            if reachable_port:
+                break
+            if attempt < 2:
+                time.sleep(2)
+
+        if not reachable_port:
+            prereq_hint = (
+                "Run on Windows as Administrator: Enable-PSRemoting -Force; "
+                "Enable-NetFirewallRule -Name WINRM-HTTP-In-TCP; "
+                "if (-not (Get-NetFirewallRule -Name WINRM-HTTP-In-TCP -ErrorAction SilentlyContinue)) "
+                "{ New-NetFirewallRule -Name WINRM-HTTP-In-TCP -DisplayName 'WinRM over HTTP' -Enabled True -Profile Any -Action Allow -Direction Inbound -Protocol TCP -LocalPort 5985 }"
+            )
             if not ping_ok:
                 return 'error', (
-                    f'Precheck failed: IP {ip} not reachable by ping and WinRM not reachable on {winrm_port}'
+                    f'Precheck failed: IP {ip} not reachable by ping and WinRM not reachable on 5985/5986. {prereq_hint}'
                 ), '', None
             if _is_system_reachable(ip, port=3389, timeout=3):
                 return 'error', (
-                    f'Precheck failed: WinRM not reachable on {ip}:{winrm_port}. '
-                    'RDP appears reachable; enable WinRM (winrm quickconfig) and open firewall port 5985.'
+                    f'Precheck failed: WinRM not reachable on {ip}:5985/5986. '
+                    f'RDP appears reachable; {prereq_hint}'
                 ), '', None
             return 'error', (
-                f'Precheck failed: System unreachable for WinRM (IP {ip}, port {winrm_port} not responding)'
+                f'Precheck failed: System unreachable for WinRM (IP {ip}, ports 5985/5986 not responding). {prereq_hint}'
             ), '', None
 
+        scheme = 'https' if int(reachable_port) == 5986 else 'http'
+        endpoint = f"{scheme}://{ip}:{reachable_port}/wsman"
+
         try:
-            sess = winrm.Session(endpoint, auth=(username, password), transport=transport)
+            session_kwargs = {}
+            if scheme == 'https':
+                # Most environments use self-signed certs for WinRM HTTPS.
+                session_kwargs["server_cert_validation"] = "ignore"
+            sess = winrm.Session(endpoint, auth=(username, password), transport=transport, **session_kwargs)
+
+            # Precheck Step 1: Ensure PSRemoting and SSH firewall are enabled/configured
+            setup_cmd = r"""
+# Enable PSRemoting for WinRM and remote PowerShell
+Enable-PSRemoting -Force -ErrorAction SilentlyContinue | Out-Null
+
+# Create AllowSSH firewall rule for port 22 (needed for SCP file transfer during deployment)
+$allowRule = Get-NetFirewallRule -Name 'AllowSSH' -ErrorAction SilentlyContinue
+if (-not $allowRule) {
+    New-NetFirewallRule -Name 'AllowSSH' -DisplayName 'Allow SSH Port 22' -Enabled True -Profile Any -Direction Inbound -Action Allow -Protocol TCP -LocalPort 22 -ErrorAction SilentlyContinue | Out-Null
+}
+
+Write-Output 'SETUP_COMPLETE'
+"""
+            setup_res = sess.run_ps(setup_cmd)
+            setup_out = ((setup_res.std_out or b"") + (setup_res.std_err or b"")).decode(errors="replace")
+
+            # Precheck Step 2: Check Trellix service status
             cmd = r"""
 $svc = Get-Service -Name xagt -ErrorAction SilentlyContinue
 if (-not $svc) { $svc = Get-Service -Name masvc -ErrorAction SilentlyContinue }
@@ -3372,13 +3546,18 @@ else { Write-Output 'NOT_INSTALLED' }
 """
             res = sess.run_ps(cmd)
             out = ((res.std_out or b"") + (res.std_err or b"")).decode(errors="replace").lower()
+            
+            setup_status = "PSRemoting and SSH firewall configured"
+            if "SETUP_COMPLETE" not in setup_out:
+                setup_status = "Note: PSRemoting/SSH firewall setup had issues (likely already configured or permission-based)"
+            
             if 'installed_running' in out:
                 win_version = _get_windows_trellix_version(sess)
-                return 'installed', 'Precheck: Trellix already running (credentials valid)', win_version or '', True
+                return 'installed', f'Precheck: Trellix already running (credentials valid); {setup_status}', win_version or '', True
             if 'installed_stopped' in out:
                 win_version = _get_windows_trellix_version(sess)
-                return 'installed', 'Precheck: Trellix installed but service is not running (credentials valid)', win_version or '', True
-            return 'pending', 'Precheck: Trellix not running (credentials valid)', '', True
+                return 'installed', f'Precheck: Trellix installed but service is not running (credentials valid); {setup_status}', win_version or '', True
+            return 'pending', f'Precheck: Trellix not running (credentials valid); {setup_status}', '', True
         except Exception as exc:
             msg = str(exc).lower()
             if any(k in msg for k in ('401', 'unauthorized', 'auth', 'access denied', 'invalid')):
@@ -3864,6 +4043,369 @@ def runs_history():
             return jsonify({"runs": runs})
     except Exception as exc:
         return jsonify({"error": f"Failed to load run history: {exc}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+# ============================================================
+# NEW: Dashboard & Analytics Endpoints
+# ============================================================
+
+@app.route('/api/dashboard/metrics', methods=['GET'])
+@limiter.limit("100 per minute")
+@_require_roles("operator", "admin")
+def dashboard_metrics():
+    """Get dashboard metrics: success rate, deployment stats, device status overview."""
+    if not _db_enabled():
+        return jsonify({"error": "Database not enabled"}), 503
+    
+    conn = None
+    try:
+        conn = _get_db_conn()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Overall stats
+            cur.execute("""
+                SELECT 
+                    COUNT(DISTINCT r.id) as total_runs,
+                    COUNT(DISTINCT CASE WHEN r.completed_at IS NOT NULL THEN r.id END) as completed_runs,
+                    COUNT(DISTINCT dr.server_id) as total_servers,
+                    COUNT(DISTINCT CASE WHEN dr.trelix_installed THEN dr.server_id END) as installed_servers,
+                    COUNT(DISTINCT CASE WHEN dr.status = 'error' THEN dr.server_id END) as failed_servers
+                FROM deployment_runs r
+                LEFT JOIN deployment_results dr ON dr.run_id = r.id
+                WHERE r.started_at > NOW() - INTERVAL '30 days'
+            """)
+            overall = dict(cur.fetchone() or {})
+            
+            # Success rate
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'installed' THEN 1 ELSE 0 END) as successful
+                FROM deployment_results
+                WHERE checked_at > NOW() - INTERVAL '30 days'
+            """)
+            success_data = dict(cur.fetchone() or {})
+            success_rate = 0
+            if success_data.get('total', 0) > 0:
+                success_rate = round((success_data.get('successful', 0) / success_data.get('total', 1)) * 100, 2)
+            
+            # Recent status breakdown
+            cur.execute("""
+                SELECT 
+                    status,
+                    COUNT(*) as count
+                FROM deployment_results
+                WHERE checked_at > NOW() - INTERVAL '7 days'
+                GROUP BY status
+                ORDER BY count DESC
+            """)
+            status_breakdown = {row['status']: row['count'] for row in cur.fetchall() or []}
+            
+            # Platform breakdown
+            cur.execute("""
+                SELECT 
+                    r.vm_type as platform,
+                    COUNT(DISTINCT r.id) as run_count,
+                    COUNT(DISTINCT dr.server_id) as server_count,
+                    COUNT(DISTINCT CASE WHEN dr.trelix_installed THEN dr.server_id END) as installed_count
+                FROM deployment_runs r
+                LEFT JOIN deployment_results dr ON dr.run_id = r.id
+                WHERE r.started_at > NOW() - INTERVAL '30 days'
+                GROUP BY r.vm_type
+                ORDER BY server_count DESC
+            """)
+            platform_stats = [dict(row) for row in cur.fetchall() or []]
+            
+            # Average deployment time (in seconds)
+            cur.execute("""
+                SELECT AVG(EXTRACT(EPOCH FROM (r.completed_at - r.started_at))) as avg_duration
+                FROM deployment_runs r
+                WHERE r.completed_at IS NOT NULL
+                  AND r.started_at > NOW() - INTERVAL '30 days'
+            """)
+            duration_row = dict(cur.fetchone() or {})
+            avg_duration = duration_row.get('avg_duration') or 0
+            
+            return jsonify({
+                "overall": {
+                    "total_runs": int(overall.get('total_runs') or 0),
+                    "completed_runs": int(overall.get('completed_runs') or 0),
+                    "total_servers": int(overall.get('total_servers') or 0),
+                    "installed_servers": int(overall.get('installed_servers') or 0),
+                    "failed_servers": int(overall.get('failed_servers') or 0),
+                },
+                "success_rate_percent": success_rate,
+                "status_breakdown": status_breakdown,
+                "platform_stats": platform_stats,
+                "average_deployment_time_seconds": round(avg_duration, 2),
+                "period": "30 days",
+            })
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load dashboard metrics: {exc}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/analytics/performance', methods=['GET'])
+@limiter.limit("100 per minute")
+@_require_roles("operator", "admin")
+def analytics_performance():
+    """Get performance analytics: success trends, problematic devices, timing analysis."""
+    if not _db_enabled():
+        return jsonify({"error": "Database not enabled"}), 503
+    
+    days = int(request.args.get('days', 30))
+    if days < 1 or days > 365:
+        days = 30
+    
+    conn = None
+    try:
+        conn = _get_db_conn()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Daily success trend
+            cur.execute(f"""
+                SELECT 
+                    DATE(dr.checked_at) as date,
+                    COUNT(*) as total,
+                    SUM(CASE WHEN dr.status = 'installed' THEN 1 ELSE 0 END) as successful,
+                    SUM(CASE WHEN dr.status = 'error' THEN 1 ELSE 0 END) as failed
+                FROM deployment_results dr
+                WHERE dr.checked_at > NOW() - INTERVAL '{days} days'
+                GROUP BY DATE(dr.checked_at)
+                ORDER BY date DESC
+                LIMIT {min(days, 365)}
+            """)
+            daily_trends = [dict(row) for row in cur.fetchall() or []]
+            
+            # Problematic devices (most failures)
+            cur.execute("""
+                SELECT 
+                    si.ip_address,
+                    COUNT(*) as total_attempts,
+                    SUM(CASE WHEN dr.status = 'error' THEN 1 ELSE 0 END) as failed_attempts,
+                    SUM(CASE WHEN dr.status = 'installed' THEN 1 ELSE 0 END) as successful_attempts,
+                    MAX(dr.checked_at) as last_attempt
+                FROM deployment_results dr
+                JOIN server_inventory si ON si.id = dr.server_id
+                WHERE dr.checked_at > NOW() - INTERVAL '90 days'
+                GROUP BY si.ip_address
+                HAVING SUM(CASE WHEN dr.status = 'error' THEN 1 ELSE 0 END) > 0
+                ORDER BY failed_attempts DESC
+                LIMIT 20
+            """)
+            problematic_devices = [dict(row) for row in cur.fetchall() or []]
+            
+            # Success rate by platform
+            cur.execute("""
+                SELECT 
+                    r.vm_type as platform,
+                    COUNT(DISTINCT dr.id) as total,
+                    SUM(CASE WHEN dr.status = 'installed' THEN 1 ELSE 0 END) as successful,
+                    ROUND(100.0 * SUM(CASE WHEN dr.status = 'installed' THEN 1 ELSE 0 END) / COUNT(DISTINCT dr.id), 2) as success_rate
+                FROM deployment_results dr
+                JOIN deployment_runs r ON dr.run_id = r.id
+                WHERE dr.checked_at > NOW() - INTERVAL '90 days'
+                GROUP BY r.vm_type
+                ORDER BY success_rate DESC
+            """)
+            platform_success = [dict(row) for row in cur.fetchall() or []]
+            
+            # Credential validity stats
+            cur.execute("""
+                SELECT 
+                    credential_valid,
+                    COUNT(*) as count
+                FROM deployment_results
+                WHERE checked_at > NOW() - INTERVAL '30 days'
+                GROUP BY credential_valid
+            """)
+            credential_stats = {str(row.get('credential_valid', 'unknown')): row.get('count', 0) for row in cur.fetchall() or []}
+            
+            return jsonify({
+                "daily_trends": daily_trends,
+                "problematic_devices": problematic_devices,
+                "platform_success_rates": platform_success,
+                "credential_validity": credential_stats,
+                "analysis_period_days": days,
+            })
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load analytics: {exc}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/audit-logs', methods=['GET'])
+@limiter.limit("100 per minute")
+@_require_roles("operator", "admin")
+def list_audit_logs():
+    """List audit logs with optional filtering by action, user, date range."""
+    if not _db_enabled():
+        return jsonify({"error": "Database not enabled"}), 503
+    
+    # Parse query parameters
+    action_type = request.args.get('action_type', '').strip()
+    user_id = request.args.get('user_id', '').strip()
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+    
+    conn = None
+    try:
+        conn = _get_db_conn()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Build query
+            where_clauses = []
+            params = []
+            
+            if action_type:
+                where_clauses.append("action_type ILIKE %s")
+                params.append(f"%{action_type}%")
+            if user_id:
+                where_clauses.append("user_id = %s")
+                params.append(int(user_id))
+            if start_date:
+                where_clauses.append("created_at >= %s::TIMESTAMPTZ")
+                params.append(start_date)
+            if end_date:
+                where_clauses.append("created_at < %s::TIMESTAMPTZ")
+                params.append(end_date)
+            
+            where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+            
+            # Get total count
+            count_sql = f"SELECT COUNT(*) as total FROM audit_logs WHERE {where_sql}"
+            cur.execute(count_sql, params)
+            total = dict(cur.fetchone() or {}).get('total', 0)
+            
+            # Get paginated results
+            sql = f"""
+                SELECT id, user_id, action_type, resource_type, resource_id, details, ip_address, created_at
+                FROM audit_logs
+                WHERE {where_sql}
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s
+            """
+            params.extend([limit, offset])
+            cur.execute(sql, params)
+            logs = [dict(row) for row in cur.fetchall() or []]
+            
+            return jsonify({
+                "logs": logs,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            })
+    except Exception as exc:
+        return jsonify({"error": f"Failed to load audit logs: {exc}"}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
+@app.route('/api/servers/search', methods=['GET'])
+@limiter.limit("100 per minute")
+@_require_roles("operator", "admin")
+def search_servers():
+    """Advanced server filtering by IP, status, platform, last deployment date, credential validity."""
+    if not _db_enabled():
+        return jsonify({"error": "Database not enabled"}), 503
+    
+    # Parse filters
+    ip_pattern = request.args.get('ip', '').strip()
+    status = request.args.get('status', '').strip()
+    platform = request.args.get('platform', '').strip()
+    credential_valid = request.args.get('credential_valid', '').strip()
+    days_since_deployment = request.args.get('days_since', '').strip()
+    trelix_installed = request.args.get('trelix_installed', '').strip()
+    limit = min(int(request.args.get('limit', 100)), 1000)
+    offset = int(request.args.get('offset', 0))
+    
+    conn = None
+    try:
+        conn = _get_db_conn()
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Build query
+            where_clauses = [
+                """
+                si.id IN (
+                    SELECT DISTINCT si2.id 
+                    FROM server_inventory si2
+                    LEFT JOIN deployment_results dr ON dr.server_id = si2.id
+                )
+                """
+            ]
+            params = []
+            
+            if ip_pattern:
+                where_clauses.append("si.ip_address::TEXT LIKE %s")
+                params.append(f"%{ip_pattern}%")
+            if status:
+                where_clauses.append("dr.status = %s")
+                params.append(status)
+            if platform:
+                where_clauses.append("si.vm_type = %s")
+                params.append(platform)
+            if credential_valid in ('true', 'false'):
+                where_clauses.append("dr.credential_valid = %s")
+                params.append(credential_valid.lower() == 'true')
+            if trelix_installed in ('true', 'false'):
+                where_clauses.append("dr.trelix_installed = %s")
+                params.append(trelix_installed.lower() == 'true')
+            if days_since_deployment:
+                days = int(days_since_deployment)
+                where_clauses.append("dr.checked_at > NOW() - INTERVAL '1 day' * %s")
+                params.append(days)
+            
+            where_sql = " AND ".join(where_clauses)
+            
+            # Get total count
+            count_sql = f"""
+                SELECT COUNT(DISTINCT si.id) as total 
+                FROM server_inventory si
+                LEFT JOIN deployment_results dr ON dr.server_id = si.id
+                WHERE {where_sql}
+            """
+            cur.execute(count_sql, params)
+            total = dict(cur.fetchone() or {}).get('total', 0)
+            
+            # Get paginated results
+            sql = f"""
+                SELECT DISTINCT 
+                    si.id, 
+                    si.ip_address, 
+                    si.vm_type, 
+                    si.putty_username,
+                    si.credential_valid,
+                    si.created_at,
+                    si.last_credential_update,
+                    dr.trelix_installed,
+                    dr.trelix_version,
+                    dr.status,
+                    dr.message,
+                    dr.checked_at
+                FROM server_inventory si
+                LEFT JOIN deployment_results dr ON dr.server_id = si.id
+                WHERE {where_sql}
+                ORDER BY si.ip_address
+                LIMIT %s OFFSET %s
+            """
+            params.extend([limit, offset])
+            cur.execute(sql, params)
+            servers = [dict(row) for row in cur.fetchall() or []]
+            
+            return jsonify({
+                "servers": servers,
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            })
+    except Exception as exc:
+        return jsonify({"error": f"Failed to search servers: {exc}"}), 500
     finally:
         if conn:
             conn.close()

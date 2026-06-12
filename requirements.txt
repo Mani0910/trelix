@@ -8,3 +8,4 @@ pywebview
 pyinstaller
 pywinrm
 psycopg2-binary
+requests

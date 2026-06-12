@@ -39,11 +39,29 @@ CREATE TABLE IF NOT EXISTS deployment_results (
     credential_valid BOOLEAN,
     status VARCHAR(32) NOT NULL,
     message TEXT,
+    duration_seconds INTEGER,
     checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT REFERENCES app_users(id),
+    action_type VARCHAR(64) NOT NULL,
+    resource_type VARCHAR(64),
+    resource_id VARCHAR(255),
+    details TEXT,
+    ip_address INET,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_server_inventory_ip ON server_inventory (ip_address);
 CREATE INDEX IF NOT EXISTS idx_server_inventory_vm_type ON server_inventory (vm_type);
+CREATE INDEX IF NOT EXISTS idx_server_inventory_created_at ON server_inventory (created_at);
 CREATE INDEX IF NOT EXISTS idx_deployment_results_status ON deployment_results (status);
 CREATE INDEX IF NOT EXISTS idx_deployment_results_checked_at ON deployment_results (checked_at);
+CREATE INDEX IF NOT EXISTS idx_deployment_results_run_id ON deployment_results (run_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_deployment_results_server_id ON deployment_results (server_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action_type ON audit_logs (action_type);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs (user_id);
+CREATE INDEX IF NOT EXISTS idx_deployment_runs_started_at ON deployment_runs (started_at);
